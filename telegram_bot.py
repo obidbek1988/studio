@@ -447,10 +447,27 @@ class TelegramBotServer:
                     print(f"[5M TG UPDATE ERROR] {ex}")
 
             import process_5million_excel
-            success_cnt, total_cnt = process_5million_excel.process_excel_order(
+            excel_start_ts = time.time()
+            res = process_5million_excel.process_excel_order(
                 local_file_path,
                 update_callback=telegram_progress_callback
             )
+            if len(res) == 3:
+                success_cnt, total_cnt, duration_sec = res
+            else:
+                success_cnt, total_cnt = res
+                duration_sec = time.time() - excel_start_ts
+
+            def fmt_dur(sec):
+                sec = int(round(sec))
+                if sec < 60:
+                    return f"{sec} soniya"
+                mins = sec // 60
+                r = sec % 60
+                return f"{mins} daqiqa" if r == 0 else f"{mins} daqiqa {r} soniya"
+
+            dur_str = fmt_dur(duration_sec)
+            avg_str = fmt_dur(duration_sec / max(1, success_cnt)) if success_cnt > 0 else "0 soniya"
 
             order_progress_state["status"] = "Yakunlandi ✅"
             order_progress_state["done"] = total_cnt
@@ -468,21 +485,25 @@ class TelegramBotServer:
                 "chat_id": chat_id,
                 "total": total_cnt,
                 "success": success_cnt,
-                "earned": earned
+                "earned": earned,
+                "duration": dur_str
             })
             save_users_db(db)
 
             self.send_message(
                 chat_id,
                 f"🎉 <b>5 MILLION PROMPTER BUYURTMASI YAKUNLANDI!</b>\n\n"
+                f"📁 <b>Fayl:</b> {orig_fname}\n"
                 f"📊 <b>Natija:</b> {success_cnt} ta o'quvchiga sertifikat olindi (Jami: {total_cnt} ta)!\n"
+                f"⏱ <b>Umumiy sarflangan vaqt:</b> {dur_str}\n"
+                f"⚡ <b>1 ta sertifikatga o'rtacha:</b> {avg_str}\n\n"
                 f"📥 To'ldirilgan va barcha sertifikat havolalari yozilgan Excel fayl quyida yuborilmoqda 👇"
             )
 
             self.send_document(
                 chat_id,
                 local_file_path,
-                caption=f"✅ 5 Million Prompter Tayyor Sertifikatlar ({success_cnt}/{total_cnt} ta)"
+                caption=f"✅ 5 Million Prompter Tayyor Sertifikatlar ({success_cnt}/{total_cnt} ta) | Vaqt: {dur_str}"
             )
         except Exception as e:
             print(f"[5MILLION ENGINE ERROR] {e}")
