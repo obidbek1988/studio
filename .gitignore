@@ -1,3 +1,10 @@
+# Maxfiy asosiy dvigatel va o'quvchilar bazasi (Faqat studio_core.enc sifatida shifrlangan holda saqlanadi)
+process_5million_excel.py
+students_db.json
+pdf_javoblar.txt
+*.pdf
+students_db*.json
+
 # Video va katta hajmli media fayllar
 *.mp4
 *.mkv

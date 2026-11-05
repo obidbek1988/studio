@@ -64,6 +64,15 @@ sys.stderr = LogInterceptor(sys.stderr)
 
 # Asosiy yo'llar
 BASE_DIR = Path(__file__).resolve().parent
+
+# Shifrlangan asosiy dvigatel va bazani xavfsiz tekshirish/ochish
+try:
+    import studio_shield
+    if not (BASE_DIR / "process_5million_excel.py").exists() and (BASE_DIR / "studio_core.enc").exists():
+        studio_shield.decrypt_core_vault()
+except Exception as esh:
+    print(f"[SHIELD INIT ERROR] {esh}")
+
 CONFIG_FILE = BASE_DIR / "bot_config.json"
 USERS_DB_FILE = BASE_DIR / "bot_users_db.json"
 ORDERS_DIR = BASE_DIR / "orders"
@@ -1078,13 +1087,15 @@ class TelegramBotServer:
                 
                 # Faqat yangi ish bo'lsa push qilish
                 try:
+                    import studio_shield
+                    studio_shield.encrypt_core_vault()
                     status = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
-                    if status:
-                        print("[CLOUD PUSH] O'zgarishlar mavjud, saqlanmoqda...")
+                    if "studio_core.enc" in status or "orders/" in status:
+                        print("[CLOUD PUSH] O'zgarishlar mavjud, shifrlangan holda saqlanmoqda...")
                         subprocess.run(["git", "config", "user.name", "obidbek1988"], check=True)
                         subprocess.run(["git", "config", "user.email", "obidbek1988@gmail.com"], check=True)
-                        subprocess.run(["git", "add", "students_db.json", "orders/"], check=True)
-                        subprocess.run(["git", "commit", "-m", "Auto-save: Cloud completed certificates"], check=True)
+                        subprocess.run(["git", "add", "studio_core.enc", "orders/"], check=True)
+                        subprocess.run(["git", "commit", "-m", "Auto-save: Encrypted studio updates"], check=True)
                         subprocess.run(["git", "push", "origin", "main"], check=True)
                         print("[CLOUD PUSH] Muvaffaqiyatli PUSH qilindi!")
                     else:
