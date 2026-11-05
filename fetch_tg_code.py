@@ -13,6 +13,10 @@ def fetch_code():
         with TelegramClient(SESSION_PATH, API_ID, API_HASH) as client:
             bot = client.get_entity("@aistudy_uz_bot")
             
+            # Eng oxirgi mavjud xabar ID sini saqlab olamiz (eski kodni olib qo'ymaslik uchun)
+            initial_msgs = client.get_messages(bot, limit=1)
+            last_msg_id = initial_msgs[0].id if initial_msgs else 0
+
             # Kod olish tugmasini bosish
             messages = client.get_messages(bot, limit=5)
             clicked = False
@@ -43,14 +47,17 @@ def fetch_code():
                                     break
                                     
             for _ in range(45):
-                time.sleep(1)
-                latest = client.get_messages(bot, limit=3)
+                time.sleep(1.5)
+                latest = client.get_messages(bot, limit=5)
                 for msg in latest:
-                    txt = msg.text or ""
-                    match = re.search(r'\b(\d{6})\b', txt)
-                    if match:
-                        print(match.group(1))
-                        return
+                    if msg.id > last_msg_id:
+                        txt = msg.text or ""
+                        match = re.search(r'\b(\d{6})\b', txt)
+                        if match:
+                            print(match.group(1))
+                            return
+    except Exception as e:
+        sys.stderr.write(str(e))
     except Exception as e:
         sys.stderr.write(str(e))
 
