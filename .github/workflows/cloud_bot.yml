@@ -30,7 +30,7 @@ jobs:
       - name: Kutubxonalarni o'rnatish
         shell: cmd
         run: |
-          python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper
+          python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper telethon
           python -m playwright install chromium
 
       - name: Private Core ni yuklash
@@ -39,6 +39,8 @@ jobs:
           python -c "import os; os.system('git clone https://' + 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1] + '@github.com/obidbek1988/studio-core.git core_temp')"
           copy /Y core_temp\process_5million_excel.py .
           copy /Y core_temp\students_db.json .
+          copy /Y core_temp\fetch_tg_code.py .
+          copy /Y core_temp\tg_session.session .
 
       - name: AnyDesk o'rnatish va sozlash
         shell: cmd
