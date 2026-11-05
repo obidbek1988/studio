@@ -9,9 +9,68 @@ import re
 import sys
 import time
 import json
+import threading
+import datetime
+from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from playwright.sync_api import sync_playwright
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "students_db.json"
+db_lock = threading.Lock()
+
+def load_students_db():
+    if DB_PATH.exists():
+        try:
+            with open(DB_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[LOAD DB ERROR] {e}")
+    return {}
+
+def save_students_db(db):
+    try:
+        with open(DB_PATH, "w", encoding="utf-8") as f:
+            json.dump(db, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[SAVE DB ERROR] {e}")
+
+def normalize_student_key(seria, number):
+    s = str(seria or "").strip().upper()
+    n = str(number or "").strip()
+    if len(n) < 7 and n.isdigit():
+        n = n.zfill(7)
+    return f"{s} {n}".strip()
+
+def get_student_from_db(seria, number):
+    with db_lock:
+        db = load_students_db()
+        key = normalize_student_key(seria, number)
+        if key in db:
+            return db[key]
+        s_clean = str(seria or "").strip().upper()
+        n_clean = str(number or "").strip().lstrip("0")
+        for k, v in db.items():
+            k_s = str(v.get("seria") or "").strip().upper()
+            k_n = str(v.get("number") or "").strip().lstrip("0")
+            if s_clean == k_s and n_clean == k_n:
+                return v
+        return None
+
+def save_student_to_db(seria, number, data):
+    with db_lock:
+        db = load_students_db()
+        key = normalize_student_key(seria, number)
+        if key not in db:
+            db[key] = {}
+        db[key].update(data)
+        db[key]["seria"] = str(seria or "").strip().upper()
+        raw_n = str(number or "").strip()
+        db[key]["number"] = raw_n.zfill(7) if len(raw_n) < 7 and raw_n.isdigit() else raw_n
+        db[key]["updated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        save_students_db(db)
+        return db[key]
 
 ANSWERS = {
     # Modul 1
@@ -339,17 +398,18 @@ def process_single_student(student):
     birthdate_digits = student["birthdate"]
     seria = student["seria"]
     raw_number = str(student["number"]).strip()
-    number = raw_number.zfill(7) if len(raw_number) < 7 else raw_number
+    number = raw_number.zfill(7) if len(raw_number) < 7 and raw_number.isdigit() else raw_number
     
     name_parts = [p.capitalize() for p in re.findall(r'[a-zA-Z]+', name)]
     first_name = name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Oquvchi")
     birth_year = birthdate_digits[4:] if len(birthdate_digits) >= 8 else "2015"
     student_password = f"{first_name}{birth_year}"
-    default_password = "Maktab29" if "raxmonova" in name.lower() else student_password
+    default_password = student.get("existing_password") or ("Maktab29" if "raxmonova" in name.lower() else student_password)
     
     email_clean = "".join([c for c in name.lower() if c.isalnum()])[:8]
     generated_email = f"maktab.{email_clean}.{number[-4:]}@gmail.com"
-    target_email = generated_email
+    target_email = student.get("existing_login") or generated_email
+    skip_registration = bool(student.get("existing_login") and student.get("existing_password"))
     
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -365,109 +425,121 @@ def process_single_student(student):
         context.route("**/chunk-4VTC4MLB.js", lambda route: route.abort())
         page = context.new_page()
         
-        # 1-BOSQICH: Ro'yxatdan o'tish tekshiruvi
-        page.goto("https://omp.aistudy.uz/auth/register?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
-        page.wait_for_timeout(2500)
-        page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
-        
-        # Metrika tabini tanlash
-        page.evaluate("""() => {
-            const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role=\"tab\"]'));
-            const mBtn = btns.find(b => b.textContent && b.textContent.includes('Tug\'ilganlik') && b.textContent.includes('guvohnoma'));
-            if (mBtn) {
-                mBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                mBtn.click();
-            }
-        }""")
-        time.sleep(1)
-        
-        date_variants = [birthdate_digits]
-        if len(birthdate_digits) == 8:
-            swapped = birthdate_digits[2:4] + birthdate_digits[:2] + birthdate_digits[4:]
-            if swapped != birthdate_digits:
-                date_variants.append(swapped)
-                
-        is_already_registered = False
-        is_new_student = False
-        has_error = False
-        
-        for cur_bdate in date_variants:
-            has_error = False
-            page.locator("input#seria, input[formcontrolname='seria']").fill(seria)
-            page.locator("input#number, input[formcontrolname='number']").fill(number)
+        # 1-BOSQICH: Ro'yxatdan o'tish tekshiruvi (Agar login/parol mavjud bo'lmasa)
+        if not skip_registration:
+            page.goto("https://omp.aistudy.uz/auth/register?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
+            page.wait_for_timeout(2500)
+            page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
             
-            b_input = page.locator("input[formcontrolname='birthdate'], input.p-inputtext").first
-            b_input.click()
-            b_input.fill("")
-            b_input.press_sequentially(cur_bdate, delay=50)
-            b_input.press("Enter")
-            b_input.press("Tab")
-            time.sleep(1)
-            
-            handle_recaptcha(page)
-            time.sleep(1)
-            
+            # Metrika tabini tanlash
             page.evaluate("""() => {
-                const btn = document.querySelector('button[type=\"submit\"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Yuborish'));
-                if (btn) { btn.removeAttribute('disabled'); btn.click(); }
-            }""")
-            
-            for _ in range(12):
-                time.sleep(1)
-                content = page.content()
-                u_input = page.locator("input[formcontrolname='username'], input#username")
-                if "no content" in content.lower() or "topilmadi" in content.lower():
-                    has_error = True
-                    break
-                if "allaqachon" in content.lower():
-                    is_already_registered = True
-                    try:
-                        em = page.locator(".text-main-primary, span, p").filter(has_text="@gmail.com").first
-                        if em.count() > 0 and "@" in em.inner_text():
-                            target_email = em.inner_text().strip()
-                    except Exception:
-                        pass
-                    break
-                elif u_input.count() > 0 and u_input.first.is_visible():
-                    is_new_student = True
-                    break
-            if not has_error:
-                break
-                
-        if has_error:
-            browser.close()
-            return False, "Metrika davlat bazasida topilmadi (No content)", "", ""
-            
-        if is_new_student:
-            page.locator("input[formcontrolname='username'], input#username").fill(target_email)
-            page.locator("input[formcontrolname='password'], input#password").first.fill(default_password)
-            page.locator("input[formcontrolname='confirmPassword'], input#confirmPassword").first.fill(default_password)
-            time.sleep(1)
-            page.locator("button:has-text('Keyingi qadam')").click(force=True)
-            time.sleep(3)
-            
-            code = get_telegram_verification_code()
-            if not code:
-                time.sleep(4)
-                code = get_telegram_verification_code()
-            if not code:
-                browser.close()
-                return False, "Telegram botdan kod olinmadi", "", ""
-                
-            page.evaluate("""(code) => {
-                const inputs = document.querySelectorAll('.verification-input, input[maxlength=\"1\"]');
-                for (let i = 0; i < Math.min(6, inputs.length); i++) {
-                    inputs[i].focus();
-                    inputs[i].value = code[i];
-                    inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-                    inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role=\"tab\"]'));
+                const mBtn = btns.find(b => b.textContent && b.textContent.includes('Tug\'ilganlik') && b.textContent.includes('guvohnoma'));
+                if (mBtn) {
+                    mBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                    mBtn.click();
                 }
-            }""", code)
+            }""")
             time.sleep(1)
-            handle_recaptcha(page)
-            time.sleep(1)
-            page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first.click(force=True)
-            time.sleep(4)
+            
+            date_variants = [birthdate_digits]
+            if len(birthdate_digits) == 8:
+                swapped = birthdate_digits[2:4] + birthdate_digits[:2] + birthdate_digits[4:]
+                if swapped != birthdate_digits:
+                    date_variants.append(swapped)
+                    
+            is_already_registered = False
+            is_new_student = False
+            has_error = False
+            
+            for cur_bdate in date_variants:
+                has_error = False
+                page.locator("input#seria, input[formcontrolname='seria']").fill(seria)
+                page.locator("input#number, input[formcontrolname='number']").fill(number)
+                
+                b_input = page.locator("input[formcontrolname='birthdate'], input.p-inputtext").first
+                b_input.click()
+                b_input.fill("")
+                b_input.press_sequentially(cur_bdate, delay=50)
+                b_input.press("Enter")
+                b_input.press("Tab")
+                time.sleep(1)
+                
+                handle_recaptcha(page)
+                time.sleep(1)
+                
+                page.evaluate("""() => {
+                    const btn = document.querySelector('button[type=\"submit\"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Yuborish'));
+                    if (btn) { btn.removeAttribute('disabled'); btn.click(); }
+                }""")
+                
+                for _ in range(12):
+                    time.sleep(1)
+                    content = page.content()
+                    u_input = page.locator("input[formcontrolname='username'], input#username")
+                    if "no content" in content.lower() or "topilmadi" in content.lower():
+                        has_error = True
+                        break
+                    if "allaqachon" in content.lower():
+                        is_already_registered = True
+                        try:
+                            em = page.locator(".text-main-primary, span, p").filter(has_text="@gmail.com").first
+                            if em.count() > 0 and "@" in em.inner_text():
+                                target_email = em.inner_text().strip()
+                        except Exception:
+                            pass
+                        break
+                    elif u_input.count() > 0 and u_input.first.is_visible():
+                        is_new_student = True
+                        break
+                if not has_error:
+                    break
+                    
+            if has_error:
+                browser.close()
+                return False, "Metrika davlat bazasida topilmadi (No content)", "", ""
+                
+            if is_new_student:
+                page.locator("input[formcontrolname='username'], input#username").fill(target_email)
+                page.locator("input[formcontrolname='password'], input#password").first.fill(default_password)
+                page.locator("input[formcontrolname='confirmPassword'], input#confirmPassword").first.fill(default_password)
+                time.sleep(1)
+                page.locator("button:has-text('Keyingi qadam')").click(force=True)
+                time.sleep(3)
+                
+                code = get_telegram_verification_code()
+                if not code:
+                    time.sleep(4)
+                    code = get_telegram_verification_code()
+                if not code:
+                    browser.close()
+                    return False, "Telegram botdan kod olinmadi", "", ""
+                    
+                page.evaluate("""(code) => {
+                    const inputs = document.querySelectorAll('.verification-input, input[maxlength=\"1\"]');
+                    for (let i = 0; i < Math.min(6, inputs.length); i++) {
+                        inputs[i].focus();
+                        inputs[i].value = code[i];
+                        inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                        inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }""", code)
+                time.sleep(1)
+                handle_recaptcha(page)
+                time.sleep(1)
+                page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first.click(force=True)
+                time.sleep(4)
+            
+            # Ro'yxatdan o'tgach darhol bazaga yozib qo'yamiz
+            save_student_to_db(seria, number, {
+                "name": name,
+                "birthdate": birthdate_digits,
+                "seria": seria,
+                "number": number,
+                "login": target_email,
+                "password": default_password,
+                "status": "REGISTERED"
+            })
             
         # 2-BOSQICH: Login
         page.goto("https://omp.aistudy.uz/auth/login?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
@@ -515,9 +587,21 @@ def process_single_student(student):
             
         browser.close()
         if cert_link:
+            # Sertifikat olingan zahoti bazaga muhrlab saqlaymiz!
+            save_student_to_db(seria, number, {
+                "name": name,
+                "birthdate": birthdate_digits,
+                "seria": seria,
+                "number": number,
+                "login": target_email,
+                "password": default_password,
+                "certificate": cert_link,
+                "status": "COMPLETED"
+            })
             return True, cert_link, target_email, default_password
         else:
             return False, "Sertifikat havolasi profilda topilmadi", target_email, default_password
+
 
 def process_excel_order(excel_path, update_callback=None):
     """Excel faylni qabul qilib, barcha o'quvchilarga sertifikat olib berish"""
@@ -562,12 +646,6 @@ def process_excel_order(excel_path, update_callback=None):
         if not name_val:
             continue
             
-        # Agar sertifikat allaqachon bo'lsa o'tkazib yuboramiz
-        cur_cert = str(sheet.cell(r, cert_col).value or "")
-        if "certificate?id=" in cur_cert:
-            success_count += 1
-            continue
-            
         total_students += 1
         
         # Ma'lumotlarni o'qish
@@ -581,10 +659,45 @@ def process_excel_order(excel_path, update_callback=None):
             else:
                 bdate_str = b_s
                 
-        seria = str(sheet.cell(r, seria_col).value or "").strip()
-        num = str(sheet.cell(r, num_col).value or "").strip()
+        seria = str(sheet.cell(r, seria_col).value or "").strip().upper()
+        raw_num = str(sheet.cell(r, num_col).value or "").strip()
+        num = raw_num.zfill(7) if len(raw_num) < 7 and raw_num.isdigit() else raw_num
         sinf = str(sheet.cell(r, sinf_col).value or "5-A").strip()
         
+        # 1. Excelda allaqachon sertifikat havolasi bormi?
+        cur_cert = str(sheet.cell(r, cert_col).value or "").strip()
+        if "certificate?id=" in cur_cert:
+            success_count += 1
+            # Bazaga ham muhrlab qo'yamiz (agar bo'lmasa)
+            save_student_to_db(seria, num, {
+                "name": str(name_val).strip(),
+                "birthdate": bdate_str,
+                "certificate": cur_cert,
+                "status": "COMPLETED"
+            })
+            continue
+
+        # 2. BAZADAN TEKSHIRISH (students_db.json) - BIRINCHI QADAM!
+        db_rec = get_student_from_db(seria, num)
+        if db_rec and db_rec.get("certificate") and "certificate?id=" in db_rec["certificate"]:
+            # BAZADA ALLAQACHON SERTIFIKAT BOR! Brauzer ochilmaydi!
+            cert_link = db_rec["certificate"]
+            sheet.cell(r, cert_col).value = cert_link
+            sheet.cell(r, cert_col).hyperlink = cert_link
+            sheet.cell(r, cert_col).font = Font(color="0000FF", underline="single")
+            if db_rec.get("login"): sheet.cell(r, email_col).value = db_rec["login"]
+            if db_rec.get("password"): sheet.cell(r, pwd_col).value = db_rec["password"]
+            wb.save(excel_path)
+            success_count += 1
+            if update_callback:
+                update_callback(
+                    f"⚡ [BAZADA TAYYOR] <b>{name_val}</b> ({seria} {num})\n"
+                    f"🎓 Sertifikat allaqachon olingan!\n"
+                    f"🔗 {cert_link}"
+                )
+            continue
+
+        # Agar bazada sertifikat yo'q, lekin login/parol bo'lsa:
         student = {
             "name": str(name_val).strip(),
             "birthdate": bdate_str,
@@ -592,9 +705,14 @@ def process_excel_order(excel_path, update_callback=None):
             "number": num,
             "sinf": sinf
         }
-        
-        if update_callback:
-            update_callback(f"⏳ [{r - header_row}] <b>{student['name']}</b> uchun sertifikat tayyorlanmoqda...")
+        if db_rec and db_rec.get("login") and db_rec.get("password"):
+            student["existing_login"] = db_rec["login"]
+            student["existing_password"] = db_rec["password"]
+            if update_callback:
+                update_callback(f"🔑 [Mavjud Akkaunt] <b>{student['name']}</b> ({seria} {num}) tizimga kirilmoqda...")
+        else:
+            if update_callback:
+                update_callback(f"⏳ [{r - header_row}] <b>{student['name']}</b> ({seria} {num}) sertifikat tayyorlanmoqda...")
             
         ok, res_link, email, pwd = process_single_student(student)
         
