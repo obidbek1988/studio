@@ -30,7 +30,7 @@ jobs:
       - name: Kutubxonalarni o'rnatish
         shell: cmd
         run: |
-          python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper telethon
+          python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper telethon soundfile SpeechRecognition
           python -m playwright install chromium
 
       - name: Private Core ni yuklash

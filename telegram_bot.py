@@ -584,24 +584,36 @@ class TelegramBotServer:
             doc = msg["document"]
             orig_fname = (doc.get("file_name") or "").strip()
             fname_lower = orig_fname.lower()
+            print(f"\n[HUJJAT KELDI] Yangi Excel fayl: '{orig_fname}' (Chat: {chat_id})")
 
             if fname_lower.endswith(".xlsx"):
+                # Har qanday pauzani avtomatik yechish
+                self.is_paused = False
+                if PAUSE_FILE.exists():
+                    try:
+                        PAUSE_FILE.unlink()
+                    except Exception:
+                        pass
+
                 clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
                 dest_file = ORDERS_DIR / f"order_{chat_id}_{int(time.time())}_{clean_base}.xlsx"
+                print(f"[YUKLANMOQDA] Telegramdan yuklab olinmoqda: {orig_fname}...")
                 self.send_message(chat_id, f"📥 <b>{orig_fname}</b> fayli yuklab olinmoqda...")
                 saved_path = self.download_file(doc["file_id"], str(dest_file))
 
                 if saved_path:
-                    # Agar admin yuborgan bo'lsa yoki 5million rejimida bo'lsa
+                    print(f"[YUKLANDI] Fayl saqlandi: {saved_path}")
                     is_admin = (self.admin_id and chat_id == self.admin_id)
                     admin_input_state.pop(chat_id, None)
 
+                    print(f"[PIPELINE BOSHLANMOQDA] 5 Million Prompter brauzer ochilmoqda...")
                     threading.Thread(
                         target=self.run_5million_pipeline,
                         args=(chat_id, user_name, saved_path, orig_fname),
                         daemon=True
                     ).start()
                 else:
+                    print(f"[XATO] Faylni yuklab olib bo'lmadi!")
                     self.send_message(chat_id, "❌ Faylni yuklab olishda xatolik yuz berdi. Qayta urinib ko'ring.")
                 return
             else:
