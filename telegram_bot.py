@@ -717,11 +717,19 @@ class TelegramBotServer:
                 f"• 26 – 50 ta o'quvchi: <b>3 500 so'm</b> dan\n"
                 f"• 51 – 100 ta o'quvchi: <b>3 000 so'm</b> dan\n"
                 f"• 100 tadan ortiq: <b>Kelishilgan narxda</b>\n\n"
-                f"📥 Buyurtma berish uchun pastdagi <b>«📥 Excel Shablon olish»</b> tugmasini bosib, "
-                f"shablonni to'ldirib yuboring!"
+                f"📁 Buyurtma berish uchun to'ldirilgan Excel (.xlsx) faylingizni to'g'ridan-to'g'ri botga yuboring!"
             )
             if is_adm:
                 welcome_text += "\n\n👑 <b>Siz TIZIM ADMINISTRATORISIZ!</b> Barcha boshqaruv tugmalari pastda faol."
+
+            banner_path = BASE_DIR / "bot_banner.jpg"
+            if banner_path.exists():
+                try:
+                    with open(banner_path, "rb") as bf:
+                        self.send_photo(chat_id, bf.read(), caption=welcome_text, reply_markup=self.get_reply_keyboard(chat_id))
+                        return
+                except Exception as eb:
+                    print(f"[BANNER ERROR] {eb}")
 
             self.send_message(chat_id, welcome_text, reply_markup=self.get_reply_keyboard(chat_id))
             return
