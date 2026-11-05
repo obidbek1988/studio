@@ -6,7 +6,7 @@ def fetch_code():
     try:
         code, session_name = fetch_tg_code_from_pool()
         if code:
-            print(code)
+            print(f"{code} {session_name}")
             return code
     except Exception as e:
         sys.stderr.write(str(e))

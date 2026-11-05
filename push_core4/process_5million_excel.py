@@ -339,18 +339,24 @@ def handle_recaptcha(page):
     return False
 
 def get_telegram_verification_code():
-    """@aistudy_uz_bot dan SMS tasdiqlash kodini olish"""
+    """@aistudy_uz_bot dan SMS tasdiqlash kodini olish (Subprocess orqali Playwrightdan to'liq izolyatsiya qilingan)"""
     try:
         import subprocess
         fetch_script = os.path.join(os.path.dirname(__file__), "fetch_tg_code.py")
-        res = subprocess.run([sys.executable, fetch_script], capture_output=True, text=True, timeout=30)
+        res = subprocess.run([sys.executable, fetch_script], capture_output=True, text=True, timeout=45)
         out = res.stdout.strip()
-        m = re.search(r"(\d{6})", out)
-        if m:
-            return m.group(1)
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        if lines:
+            last_line = lines[-1]
+            parts = last_line.split()
+            if len(parts) >= 2 and len(parts[0]) == 6 and parts[0].isdigit():
+                return parts[0], parts[1]
+            m = re.search(r"\b(\d{6})\b", last_line)
+            if m:
+                return m.group(1), "session"
     except Exception as e:
         print(f"Telegram kod olishda xatolik: {e}")
-    return None
+    return None, None
 
 def switch_to_login_tab(page):
     """Login tabiga o'tish"""
@@ -818,15 +824,15 @@ def process_single_student(student, update_callback=None):
                 page.locator("button:has-text('Keyingi qadam')").click(force=True)
                 time.sleep(3)
 
-                from session_pool import fetch_tg_code_from_pool, mark_session_exhausted, record_session_success
+                from session_pool import mark_session_exhausted, record_session_success
 
                 registration_success = False
                 for reg_attempt in range(1, 10):
                     notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) tasdiqlash kodi olinmoqda ({reg_attempt}-urinish)...")
-                    code, session_used = fetch_tg_code_from_pool()
+                    code, session_used = get_telegram_verification_code()
                     if not code:
                         time.sleep(3)
-                        code, session_used = fetch_tg_code_from_pool()
+                        code, session_used = get_telegram_verification_code()
                     if not code:
                         notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
                         continue

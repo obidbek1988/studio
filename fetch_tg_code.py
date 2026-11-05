@@ -1,65 +1,16 @@
-import os
 import sys
-import time
 import re
-from telethon.sync import TelegramClient
-
-API_ID = 26521369
-API_HASH = "fa2e0d37e50c4aa3d54c1537b0d88470"
-SESSION_PATH = os.path.join(os.path.dirname(__file__), "tg_session")
+from session_pool import fetch_tg_code_from_pool
 
 def fetch_code():
     try:
-        with TelegramClient(SESSION_PATH, API_ID, API_HASH) as client:
-            bot = client.get_entity("@aistudy_uz_bot")
-            
-            # Eng oxirgi mavjud xabar ID sini saqlab olamiz (eski kodni olib qo'ymaslik uchun)
-            initial_msgs = client.get_messages(bot, limit=1)
-            last_msg_id = initial_msgs[0].id if initial_msgs else 0
-
-            # Kod olish tugmasini bosish
-            messages = client.get_messages(bot, limit=5)
-            clicked = False
-            for msg in messages:
-                if msg.buttons:
-                    for row in msg.buttons:
-                        for b in row:
-                            if "Tasdiqlash kodini olish" in b.text:
-                                b.click()
-                                clicked = True
-                                break
-                        if clicked:
-                            break
-                if clicked:
-                    break
-                    
-            if not clicked:
-                client.send_message(bot, "/start")
-                time.sleep(2)
-                msgs = client.get_messages(bot, limit=3)
-                for m in msgs:
-                    if m.buttons:
-                        for row in m.buttons:
-                            for b in row:
-                                if "Tasdiqlash kodini olish" in b.text:
-                                    b.click()
-                                    clicked = True
-                                    break
-                                    
-            for _ in range(45):
-                time.sleep(1.5)
-                latest = client.get_messages(bot, limit=5)
-                for msg in latest:
-                    if msg.id > last_msg_id:
-                        txt = msg.text or ""
-                        match = re.search(r'\b(\d{6})\b', txt)
-                        if match:
-                            print(match.group(1))
-                            return
+        code, session_name = fetch_tg_code_from_pool()
+        if code:
+            print(f"{code} {session_name}")
+            return code
     except Exception as e:
         sys.stderr.write(str(e))
-    except Exception as e:
-        sys.stderr.write(str(e))
+    return None
 
 if __name__ == "__main__":
     fetch_code()

@@ -456,7 +456,9 @@ class TelegramBotServer:
                 except Exception as ex:
                     print(f"[5M TG UPDATE ERROR] {ex}")
 
+            import importlib
             import process_5million_excel
+            importlib.reload(process_5million_excel)
             excel_start_ts = time.time()
             res = process_5million_excel.process_excel_order(
                 local_file_path,
