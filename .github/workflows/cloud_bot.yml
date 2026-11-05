@@ -49,7 +49,7 @@ jobs:
           anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --silent
           timeout /t 5 /nobreak
           echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
-          python -c "import subprocess, requests; res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post('https://api.telegram.org/bot9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ/sendMessage', json={'chat_id': 6580113791, 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
+          python -c "import subprocess, requests; res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post('https://api.telegram.org/bot9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ/sendMessage', json={'chat_id': 6580113791, 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
 
       - name: Botni ishga tushirish va Serverni doimiy ushlab turish
         shell: cmd
@@ -61,4 +61,7 @@ jobs:
         run: |
           if exist bot_pause_state.txt del /F /Q bot_pause_state.txt
           start "TelegramBotConsole" cmd /k "C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe telegram_bot.py"
-          python -c "import time; time.sleep(21000)"
+          echo Server 6 soat doimiy ishlab turadi...
+          for /L %%i in (1,1,360) do (
+              ping 127.0.0.1 -n 60 > nul
+          )
