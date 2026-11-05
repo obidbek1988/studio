@@ -1,0 +1,32 @@
+# Video va katta hajmli media fayllar
+*.mp4
+*.mkv
+*.avi
+
+# Vaqtinchalik audio va kesh papkalar
+temp_audio/
+video_frames/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Telegram sessiyalari va loglar
+*.session
+*.session-journal
+*.log
+
+# Captcha va skrinshotlar
+captcha*.mp3
+captcha*.wav
+*.mp3
+cert*.png
+bypass_test.png
+certificate_result.png
+screenshot*.png
+
+# Foydalanuvchi buyurtmalari (maxfiylik)
+orders/*.xlsx
+bot_users_db.json
+bot_pause_state.txt
+ai_feedback_inbox.json

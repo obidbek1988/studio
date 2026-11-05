@@ -1,0 +1,1 @@
+var e={baseUrl:"https://api.aistudy.uz/api/StudyAILms",production:!0,telegramBot:"aistudy_uz_bot",videoStream:"https://media.aistudy.uz/api/Media/GetVideoStreams",recaptchaVersion:"v2",recaptchaSiteKey:"6LeELX4sAAAAAFa3j__ZBz7HfQMNcLWnQQ0lXHyz",recaptchaV2SiteKey:"6Le3qX4sAAAAAGczRTTbo1DwuDMJhRdxTB4GA9Qs"};export{e as a};
