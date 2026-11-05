@@ -1058,7 +1058,7 @@ class TelegramBotServer:
             pass
 
     # =========================================================================
-    # ASOSIY POLLING SIKLI
+    # ASOSIY POLLING SIKLI VA BULUT TAYMERI (24/7 CLOUD SELF-RELOAD)
     # =========================================================================
     def start_polling(self):
         print(f"============================================================")
@@ -1066,7 +1066,48 @@ class TelegramBotServer:
         print(f"Admin ID: {self.admin_id} | Kompyuter: {socket.gethostname()}")
         print(f"============================================================")
 
+        cloud_start_time = time.time()
+        cloud_max_sec = 4.5 * 3600  # 4.5 soat
+        is_cloud = os.environ.get("CLOUD_MODE") == "1" or os.environ.get("GITHUB_ACTIONS") == "true"
+
         while self.is_running:
+            # Bulut taymerini tekshirish (o'chishdan 30 daqiqa oldin xavfsiz push va qayta yoqish)
+            if is_cloud and (time.time() - cloud_start_time >= cloud_max_sec):
+                print("[CLOUD DRAIN] 4.5 soat to'ldi. Yangi buyurtma qabul qilinmaydi!")
+                self.send_message(self.admin_id, "⏳ <b>Bulutli bot: 4.5 soat ishladi.</b> Ma'lumotlar saqlanmoqda va yangi zanjirli oqim ishga tushirilmoqda...")
+                
+                # Faqat yangi ish bo'lsa push qilish
+                try:
+                    status = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+                    if status:
+                        print("[CLOUD PUSH] O'zgarishlar mavjud, saqlanmoqda...")
+                        subprocess.run(["git", "config", "user.name", "obidbek1988"], check=True)
+                        subprocess.run(["git", "config", "user.email", "obidbek1988@gmail.com"], check=True)
+                        subprocess.run(["git", "add", "students_db.json", "orders/"], check=True)
+                        subprocess.run(["git", "commit", "-m", "Auto-save: Cloud completed certificates"], check=True)
+                        subprocess.run(["git", "push", "origin", "main"], check=True)
+                        print("[CLOUD PUSH] Muvaffaqiyatli PUSH qilindi!")
+                    else:
+                        print("[CLOUD PUSH] Yangi ish bo'lmadi, push qilinmadi.")
+                except Exception as ep:
+                    print(f"[CLOUD PUSH ERROR] {ep}")
+
+                # Keyingi yangi bulutli runni ishga tushirish (Auto-restart)
+                try:
+                    gh_tok = os.environ.get("GH_TOKEN", "")
+                    if gh_tok:
+                        requests.post(
+                            "https://api.github.com/repos/obidbek1988/5millionbot/actions/workflows/cloud_bot.yml/dispatches",
+                            headers={"Authorization": f"token {gh_tok}", "Accept": "application/vnd.github+json"},
+                            json={"ref": "main"},
+                            timeout=15
+                        )
+                        print("[CLOUD RESTART] Keyingi 5 soatlik bulutli ishchi ishga tushirildi!")
+                except Exception as er:
+                    print(f"[CLOUD RESTART ERROR] {er}")
+
+                break
+
             try:
                 url = f"{self.base_url}/getUpdates?offset={self.offset}&timeout=25"
                 resp = self.session.get(url, timeout=30)
