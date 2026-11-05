@@ -16,7 +16,7 @@ permissions:
 jobs:
   cloud-runner:
     runs-on: windows-latest
-    timeout-minutes: 340
+    timeout-minutes: 350
 
     steps:
       - name: Repositoriyani yuklash
@@ -33,6 +33,13 @@ jobs:
           python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper
           python -m playwright install chromium
 
+      - name: Private Core ni yuklash
+        shell: cmd
+        run: |
+          python -c "import os; os.system('git clone https://' + 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1] + '@github.com/obidbek1988/studio-core.git core_temp')"
+          copy /Y core_temp\process_5million_excel.py .
+          copy /Y core_temp\students_db.json .
+
       - name: AnyDesk o'rnatish va sozlash
         shell: cmd
         run: |
@@ -40,9 +47,9 @@ jobs:
           anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --silent
           timeout /t 5 /nobreak
           echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
-          python -c "import subprocess, requests; res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post('https://api.telegram.org/bot9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ/sendMessage', json={'chat_id': 6580113791, 'text': f'🖥 <b>GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nMarhamat, AnyDesk orqali ulaning va Chrome ochilishini jonli ko\'ring!', 'parse_mode': 'HTML'})"
+          python -c "import subprocess, requests; res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post('https://api.telegram.org/bot9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ/sendMessage', json={'chat_id': 6580113791, 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
 
-      - name: Private Core ni yuklash va Botni ishga tushirish
+      - name: Botni ishga tushirish va Serverni doimiy ushlab turish
         shell: cmd
         env:
           BOT_TOKEN: "9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ"
@@ -50,7 +57,6 @@ jobs:
           CARD_INFO: "5614 6812 1100 2260 (QOBILOV OBIDJON)"
           CLOUD_MODE: "1"
         run: |
-          python -c "import os; os.system('git clone https://' + 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1] + '@github.com/obidbek1988/studio-core.git core_temp')"
-          copy /Y core_temp\process_5million_excel.py .
-          copy /Y core_temp\students_db.json .
-          python telegram_bot.py
+          if exist bot_pause_state.txt del /F /Q bot_pause_state.txt
+          start "TelegramBotConsole" cmd /k "C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe telegram_bot.py"
+          python -c "import time; time.sleep(21000)"
