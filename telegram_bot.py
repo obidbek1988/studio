@@ -1152,7 +1152,7 @@ class TelegramBotServer:
                     gh_tok = os.environ.get("GH_TOKEN", "")
                     if gh_tok:
                         requests.post(
-                            "https://api.github.com/repos/obidbek1988/5millionbot/actions/workflows/cloud_bot.yml/dispatches",
+                            "https://api.github.com/repos/obidbek1988/studio/actions/workflows/cloud_bot.yml/dispatches",
                             headers={"Authorization": f"token {gh_tok}", "Accept": "application/vnd.github+json"},
                             json={"ref": "main"},
                             timeout=15
