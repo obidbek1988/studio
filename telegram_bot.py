@@ -84,7 +84,7 @@ DEFAULT_CONFIG = {
     "card_info": os.environ.get("CARD_INFO", "5614 6812 1100 2260 (QOBILOV OBIDJON)"),
     "anydesk_id": "1873514815",
     "anydesk_pwd": "UzbekCoders2026!",
-    "cert_price": 3500
+    "cert_price": 4000
 }
 
 def load_config():
@@ -637,6 +637,30 @@ class TelegramBotServer:
                     is_admin = (self.admin_id and chat_id == self.admin_id)
                     admin_input_state.pop(chat_id, None)
 
+                    # 40 ta o'quvchi cheklovi tekshiruvi
+                    try:
+                        import openpyxl
+                        wb_chk = openpyxl.load_workbook(saved_path, read_only=True)
+                        ws_chk = wb_chk.active
+                        row_cnt = 0
+                        for row in ws_chk.iter_rows(values_only=True):
+                            if row and any(row):
+                                row_cnt += 1
+                        student_cnt = max(0, row_cnt - 1)
+                        wb_chk.close()
+                        if student_cnt > 40 and not is_admin:
+                            self.send_message(
+                                chat_id,
+                                f"⚠️ <b>Buyurtma hajmi oshib ketdi!</b>\n\n"
+                                f"Hozirda 1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.\n"
+                                f"Siz yuborgan faylda: <b>{student_cnt} ta o'quvchi</b> mavjud.\n\n"
+                                f"Iltimos, faylingizni 40 tadan qilib bo'lib yuboring!",
+                                reply_markup=self.get_reply_keyboard(chat_id)
+                            )
+                            return
+                    except Exception as ec:
+                        print(f"[STUDENT COUNT CHECK ERROR] {ec}")
+
                     print(f"[PIPELINE BOSHLANMOQDA] 5 Million Prompter brauzer ochilmoqda...")
                     threading.Thread(
                         target=self.run_5million_pipeline,
@@ -717,8 +741,9 @@ class TelegramBotServer:
         if text.startswith("/start"):
             admin_input_state.pop(chat_id, None)
             is_adm = (self.admin_id and chat_id == self.admin_id)
+            greeting_name = f"👑OBIDBEK GARANT ADMIN👑ID:{chat_id}" if is_adm else f"<b>{user_name}</b>"
             welcome_text = (
-                f"Assalomu alaykum, <b>{user_name}</b>! 👋\n\n"
+                f"Assalomu alaykum, {greeting_name}! 👋\n\n"
                 f"🎓 <b>5 MILLION PROMPTER (omp.aistudy.uz) AVTOMAT TIZIMIGA XUSH KELIBSIZ!</b>\n\n"
                 f"🤖 Ushbu bot orqali o'quvchilaringizning 5 Million Prompter sertifikatlarini "
                 f"to'liq avtomatik, 100% testlarni yechgan holda olishingiz mumkin.\n\n"
@@ -727,6 +752,7 @@ class TelegramBotServer:
                 f"• 26 – 50 ta o'quvchi: <b>3 500 so'm</b> dan\n"
                 f"• 51 – 100 ta o'quvchi: <b>3 000 so'm</b> dan\n"
                 f"• 100 tadan ortiq: <b>Kelishilgan narxda</b>\n\n"
+                f"⚠️ <i>Hozircha 1 ta buyurtma uchun maksimal 40 ta o'quvchi qabul qilinadi.</i>\n\n"
                 f"📁 Buyurtma berish uchun to'ldirilgan Excel (.xlsx) faylingizni to'g'ridan-to'g'ri botga yuboring!"
             )
             if is_adm:
@@ -981,15 +1007,16 @@ class TelegramBotServer:
             return
 
         # 19. 💰 Narxlar va 50% Avans
-        if text in ("💰 Narxlar va 50% Avans", "/narxlar"):
+        if text in ("💰 Narxlar va 50% Avans", "/narxlar", "/tariflar", "💰 Tariflar", "Tariflar"):
             card = self.config.get("card_info")
             msg = (
-                "💰 <b>TARIFLAR VA 50% AVANS TIZIMI:</b>\n"
+                "💰 <b>TARIFLAR VA TO'LOV TIZIMI:</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
                 "• 1 – 25 ta o'quvchi: <b>4 000 so'm</b> dan\n"
                 "• 26 – 50 ta o'quvchi: <b>3 500 so'm</b> dan\n"
                 "• 51 – 100 ta o'quvchi: <b>3 000 so'm</b> dan\n"
-                "• 100 tadan ortiq: <b>Kelishilgan arzon narxda</b>\n\n"
+                "• 100 tadan ortiq: <b>Kelishilgan narxda</b>\n\n"
+                "⚠️ <b>Cheklov:</b> Hozircha 1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.\n\n"
                 "🌗 <b>50% Avans Imkoniyati:</b>\n"
                 "Buyurtma berayotganda summaning <b>50% qismini</b> avans sifatida to'lab ishni boshlashingiz mumkin. "
                 "Qolgan 50% qismini barcha sertifikatlar tayyor bo'lgach to'laysiz!\n\n"
