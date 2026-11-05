@@ -300,16 +300,18 @@ class TelegramBotServer:
     # =========================================================================
     def get_reply_keyboard(self, chat_id: int):
         if self.admin_id and chat_id == self.admin_id:
+            s_mode = self.config.get("server_mode", "admin_only")
+            s_btn = "🔒 Server: Faqat Admin" if s_mode == "admin_only" else "🔓 Server: Barchaga Ochiq"
             return {
                 "keyboard": [
+                    [{"text": s_btn}, {"text": "📸 Kompyuterdan Skrinshot"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
                     [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
                     [{"text": "⚡ Jonli Log (Console)"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
-                    [{"text": "💰 Foyda va Kassa"}, {"text": "📸 Kompyuterdan Skrinshot"}],
-                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
-                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "💰 Foyda va Kassa"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
+                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": False,
@@ -620,6 +622,40 @@ class TelegramBotServer:
             print(f"\n[HUJJAT KELDI] Yangi Excel fayl: '{orig_fname}' (Chat: {chat_id})")
 
             if fname_lower.endswith(".xlsx"):
+                is_admin = (self.admin_id and chat_id == self.admin_id)
+                server_mode = self.config.get("server_mode", "admin_only")
+
+                # Agar server band bo'lsa va admindan boshqa odam Excel tashlasa
+                if not is_admin and server_mode == "admin_only":
+                    admin_user = self.config.get("admin_username", "@OBIDBEK1988")
+                    admin_url = self.config.get("admin_tg_url", "https://t.me/OBIDBEK1988")
+                    contact_markup = {
+                        "inline_keyboard": [
+                            [{"text": f"👨‍💼 Adminga yozish ({admin_user})", "url": admin_url}]
+                        ]
+                    }
+                    self.send_message(
+                        chat_id,
+                        f"🚫 <b>SERVER HOZIRCHA BAND!</b>\n\n"
+                        f"Hurmatli <b>{user_name}</b>, hozirda server navbat bilan band.\n"
+                        f"Excel buyurtmalar hozirda faqat <b>Administrator</b> orqali qabul qilinmoqda.\n\n"
+                        f"Buyurtmangizni tezkor navbatga qo'yish uchun Adminga murojaat qiling:\n"
+                        f"👉 <b>Admin:</b> {admin_user}\n"
+                        f"🔗 <b>Bog'lanish:</b> {admin_url}",
+                        reply_markup=contact_markup
+                    )
+                    try:
+                        self.send_message(
+                            self.admin_id,
+                            f"🔔 <b>Mijoz Excel yubordi (Server Band holatida):</b>\n"
+                            f"👤 <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                            f"📁 Fayl: <code>{orig_fname}</code>\n"
+                            f"ℹ️ Server 'Faqat Admin' rejimida bo'lgani sababli fayl olinmadi va Sizga yo'naltirildi."
+                        )
+                    except Exception:
+                        pass
+                    return
+
                 # Har qanday pauzani avtomatik yechish
                 self.is_paused = False
                 if PAUSE_FILE.exists():
@@ -744,9 +780,28 @@ class TelegramBotServer:
             admin_input_state.pop(chat_id, None)
             is_adm = (self.admin_id and chat_id == self.admin_id)
             greeting_name = f"👑OBIDBEK GARANT ADMIN👑ID:{chat_id}" if is_adm else f"<b>{user_name}</b>"
+            server_mode = self.config.get("server_mode", "admin_only")
+            admin_user = self.config.get("admin_username", "@OBIDBEK1988")
+            admin_url = self.config.get("admin_tg_url", "https://t.me/OBIDBEK1988")
+
+            if server_mode == "admin_only":
+                server_status_banner = (
+                    "🔴 <b>SERVER HOLATI: BAND (Faqat Administrator orqali)</b>\n"
+                    "⚠️ <i>Hozirda server navbat bilan band. Buyurtma berish uchun Adminga murojaat qiling!</i>\n"
+                    f"👉 <b>Admin:</b> {admin_user} ({admin_url})\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                )
+            else:
+                server_status_banner = (
+                    "🟢 <b>SERVER HOLATI: OCHIQ</b>\n"
+                    "📁 <i>Buyurtma berish uchun Excel (.xlsx) faylingizni botga yuborishingiz mumkin!</i>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                )
+
             welcome_text = (
                 f"Assalomu alaykum, {greeting_name}! 👋\n\n"
-                f"🎓 <b>5 MILLION PROMPTER (omp.aistudy.uz) AVTOMAT TIZIMIGA XUSH KELIBSIZ!</b>\n\n"
+                f"{server_status_banner}"
+                f"🎓 <b>5 MILLION PROMPTER (omp.aistudy.uz) AVTOMAT TIZIMI</b>\n\n"
                 f"🤖 Ushbu bot orqali o'quvchilaringizning 5 Million Prompter sertifikatlarini "
                 f"to'liq avtomatik, 100% testlarni yechgan holda olishingiz mumkin.\n\n"
                 f"💰 <b>Tariflar:</b>\n"
@@ -755,10 +810,10 @@ class TelegramBotServer:
                 f"• 51 – 100 ta o'quvchi: <b>3 000 so'm</b> dan\n"
                 f"• 100 tadan ortiq: <b>Kelishilgan narxda</b>\n\n"
                 f"⚠️ <i>Hozircha 1 ta buyurtma uchun maksimal 40 ta o'quvchi qabul qilinadi.</i>\n\n"
-                f"📁 Buyurtma berish uchun to'ldirilgan Excel (.xlsx) faylingizni to'g'ridan-to'g'ri botga yuboring!"
+                f"👨‍💻 <b>Administrator:</b> {admin_user}"
             )
             if is_adm:
-                welcome_text += "\n\n👑 <b>Siz TIZIM ADMINISTRATORISIZ!</b> Barcha boshqaruv tugmalari pastda faol."
+                welcome_text += f"\n\n👑 <b>Siz TIZIM ADMINISTRATORISIZ!</b> Hozir server holati: <b>{server_mode.upper()}</b>."
 
             banner_path = BASE_DIR / "bot_banner.jpg"
             if banner_path.exists():
@@ -770,6 +825,33 @@ class TelegramBotServer:
                     print(f"[BANNER ERROR] {eb}")
 
             self.send_message(chat_id, welcome_text, reply_markup=self.get_reply_keyboard(chat_id))
+            return
+
+        # 1.5. 🔒/🔓 Server Holati (Faqat Admin boshqaradi)
+        if text.startswith("🔒 Server: Faqat Admin") or text.startswith("🔓 Server: Barchaga Ochiq") or text in ("/server", "/servermode"):
+            if not (self.admin_id and chat_id == self.admin_id):
+                self.send_message(chat_id, "⚠️ Bu amal faqat Administrator uchun!")
+                return
+
+            cur_mode = self.config.get("server_mode", "admin_only")
+            new_mode = "public" if cur_mode == "admin_only" else "admin_only"
+            self.config["server_mode"] = new_mode
+            save_config(self.config)
+
+            if new_mode == "public":
+                msg = (
+                    "🔓 <b>SERVER BARCHA MIJOZLAR UCHUN OCHILDI!</b>\n\n"
+                    "✅ Endi barcha foydalanuvchilar to'g'ridan-to'g'ri Excel (.xlsx) fayllarini botga yuborishlari mumkin.\n"
+                    "Tizim barcha buyurtmalarni avtomatik navbatga qo'yadi."
+                )
+            else:
+                msg = (
+                    "🔒 <b>SERVER FAQAT ADMIN REJIMIGA O'TKAZILDI (BAND)!</b>\n\n"
+                    "⛔️ Begona mijozlar Excel yuborishsa, ularga server bandligi va Adminga (@OBIDBEK1988) murojaat qilish xabari chiqadi.\n"
+                    "👑 Siz (Admin) esa bemalol istalgan Excel faylni yuborib ishlatishingiz mumkin."
+                )
+
+            self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return
 
         # 2. 🎓 5 Million Prompter (Besh Million)
