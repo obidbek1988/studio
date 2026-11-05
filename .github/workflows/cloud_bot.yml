@@ -33,6 +33,15 @@ jobs:
           python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper
           python -m playwright install chromium
 
+      - name: AnyDesk o'rnatish va sozlash
+        shell: cmd
+        run: |
+          curl -fsSL "https://download.anydesk.com/AnyDesk.exe" -o anydesk.exe
+          anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --silent
+          timeout /t 5 /nobreak
+          echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
+          python -c "import subprocess, requests; res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post('https://api.telegram.org/bot9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ/sendMessage', json={'chat_id': 6580113791, 'text': f'🖥 <b>GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nMarhamat, AnyDesk orqali ulaning va Chrome ochilishini jonli ko\'ring!', 'parse_mode': 'HTML'})"
+
       - name: Private Core ni yuklash va Botni ishga tushirish
         shell: cmd
         env:
