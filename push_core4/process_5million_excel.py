@@ -491,7 +491,7 @@ def complete_course(page, course_id, status_callback=None):
             if les_type == 2:
                 if les_status == 2:
                     continue
-                for attempt in range(1, 5):
+                for attempt in range(1, 4):
                     watch_res = page.evaluate(f"""async () => {{
                         try {{
                             const token = localStorage.getItem('accessToken');
@@ -508,19 +508,19 @@ def complete_course(page, course_id, status_callback=None):
                                     usedTime: 300
                                 }})
                             }});
-                            if (r.status === 429) return {{ status: 429 }};
-                            return await r.json();
+                            return {{ status: r.status, ok: r.ok }};
                         }} catch(e) {{
                             return {{ error: e.toString() }};
                         }}
                     }}""")
                     if watch_res and watch_res.get("status") == 429:
-                        time.sleep(6)
+                        time.sleep(5)
                         continue
-                    if watch_res and (watch_res.get("statusCode") == 200 or watch_res.get("result")):
-                        time.sleep(3.5)
+                    if watch_res and (watch_res.get("ok") or watch_res.get("status") == 200):
+                        print(f"    [OK] Modul {course_id} - Dars {les_id} yopildi (✔)")
+                        time.sleep(1.2)
                         break
-                    time.sleep(2)
+                    time.sleep(1.5)
                     
             # Quiz (type == 3)
             elif les_type == 3:
@@ -609,7 +609,7 @@ def complete_course(page, course_id, status_callback=None):
                             }})
                         }});
                     }}""")
-                    time.sleep(4)
+                    time.sleep(1.5)
     return True
 
 def process_single_student(student, update_callback=None):
