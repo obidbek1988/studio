@@ -292,7 +292,6 @@ class TelegramBotServer:
         if self.admin_id and chat_id == self.admin_id:
             return {
                 "keyboard": [
-                    [{"text": "🎓 5 Million Prompter (Besh Million)"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
@@ -307,7 +306,6 @@ class TelegramBotServer:
             }
         return {
             "keyboard": [
-                [{"text": "🎓 5 Million Prompter"}],
                 [{"text": "📥 Excel Shablon olish"}, {"text": "📸 To'lov chekini yuborish"}],
                 [{"text": "💰 Narxlar va 50% Avans"}, {"text": "👨‍💼 Admin bilan aloqa"}],
             ],
@@ -1003,10 +1001,13 @@ class TelegramBotServer:
         if len(log_text) > 3500:
             log_text = log_text[-3500:]
 
+        import html
+        safe_log = html.escape(log_text)
+
         msg = (
             "⚡ <b>JONLI LOG (CONSOLE):</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"<pre>{log_text}</pre>"
+            f"<pre>{safe_log}</pre>"
         )
         markup = {"inline_keyboard": [[{"text": "🔄 Loglarni yangilash", "callback_data": "refresh_logs"}]]}
         if edit_msg_id:
@@ -1120,7 +1121,7 @@ class TelegramBotServer:
                         for upd in data.get("result", []):
                             self.offset = upd["update_id"] + 1
                             try:
-                                self.process_update(upd)
+                                threading.Thread(target=self.process_update, args=(upd,), daemon=True).start()
                             except Exception as eu:
                                 print(f"[PROCESS UPDATE ERROR] {eu}")
                                 traceback.print_exc()
