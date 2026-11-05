@@ -35,8 +35,10 @@ jobs:
 
       - name: Private Core ni yuklash
         shell: cmd
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          python -c "import os; os.system('git clone https://' + 'nU6vJ18UwvNfTugrpMtBWLqtVCpxFYBPjk1G_phg'[::-1] + '@github.com/obidbek1988/studio-core.git core_temp')"
+          python -c "import os; tok = os.environ.get('GH_TOKEN', ''); os.system(f'git clone https://{tok}@github.com/obidbek1988/studio-core.git core_temp')"
           copy /Y core_temp\process_5million_excel.py .
           copy /Y core_temp\students_db.json .
           copy /Y core_temp\fetch_tg_code.py .
@@ -44,19 +46,23 @@ jobs:
 
       - name: AnyDesk o'rnatish va sozlash
         shell: cmd
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
         run: |
           curl -fsSL "https://download.anydesk.com/AnyDesk.exe" -o anydesk.exe
           anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --silent
           timeout /t 5 /nobreak
           echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
-          python -c "import subprocess, requests; res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post('https://api.telegram.org/bot9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ/sendMessage', json={'chat_id': 6580113791, 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
+          python -c "import os, subprocess, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
 
       - name: Botni ishga tushirish va Serverni doimiy ushlab turish
         shell: cmd
         env:
-          BOT_TOKEN: "9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ"
-          ADMIN_ID: "6580113791"
-          CARD_INFO: "5614 6812 1100 2260 (QOBILOV OBIDJON)"
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          CARD_INFO: ${{ secrets.CARD_INFO }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           CLOUD_MODE: "1"
         run: |
           if exist bot_pause_state.txt del /F /Q bot_pause_state.txt

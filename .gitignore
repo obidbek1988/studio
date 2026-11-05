@@ -33,6 +33,14 @@ certificate_result.png
 screenshot*.png
 
 # Foydalanuvchi buyurtmalari (maxfiylik)
+*.xlsx
+*.xls
+token.txt
+bot_config.json
+akkountlar*.txt
+natijalar*.txt
+bot_orders/
+orders/
 orders/*.xlsx
 bot_users_db.json
 bot_pause_state.txt

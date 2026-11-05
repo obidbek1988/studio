@@ -75,31 +75,41 @@ PAUSE_FILE = BASE_DIR / "bot_pause_state.txt"
 os.makedirs(ORDERS_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
-# Standart konfiguratsiya
+# Standart konfiguratsiya (GitHub Secrets orqali xavfsiz yuklanadi)
 DEFAULT_CONFIG = {
-    "bot_token": "9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ",
-    "admin_id": 6580113791,
+    "bot_token": os.environ.get("BOT_TOKEN", ""),
+    "admin_id": int(os.environ.get("ADMIN_ID", 6580113791)),
     "admin_username": "@OBIDBEK1988",
     "admin_tg_url": "https://t.me/OBIDBEK1988",
-    "card_info": "5614 6812 1100 2260 (QOBILOV OBIDJON)",
+    "card_info": os.environ.get("CARD_INFO", "5614 6812 1100 2260 (QOBILOV OBIDJON)"),
     "anydesk_id": "1873514815",
     "anydesk_pwd": "UzbekCoders2026!",
     "cert_price": 3500
 }
 
 def load_config():
+    cfg = DEFAULT_CONFIG.copy()
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-                for k, v in DEFAULT_CONFIG.items():
-                    if k not in cfg:
+                loaded = json.load(f)
+                for k, v in loaded.items():
+                    if v:
                         cfg[k] = v
-                return cfg
         except Exception as e:
             print(f"[CONFIG ERROR] {e}")
-    save_config(DEFAULT_CONFIG)
-    return DEFAULT_CONFIG.copy()
+
+    # Environment variables (GitHub Secrets) doimo ustuvor
+    if os.environ.get("BOT_TOKEN"):
+        cfg["bot_token"] = os.environ.get("BOT_TOKEN")
+    if os.environ.get("ADMIN_ID"):
+        try:
+            cfg["admin_id"] = int(os.environ.get("ADMIN_ID"))
+        except Exception:
+            pass
+    if os.environ.get("CARD_INFO"):
+        cfg["card_info"] = os.environ.get("CARD_INFO")
+    return cfg
 
 def save_config(cfg):
     try:
