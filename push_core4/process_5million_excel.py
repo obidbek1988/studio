@@ -610,6 +610,8 @@ def complete_course(page, course_id, status_callback=None):
                         }});
                     }}""")
                     time.sleep(1.5)
+    if status_callback:
+        status_callback(f"✅ {c_title} 100% muvaffaqiyatli yakunlandi!")
     return True
 
 def process_single_student(student, update_callback=None):
