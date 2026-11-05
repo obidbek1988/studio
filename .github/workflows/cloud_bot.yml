@@ -38,7 +38,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          python -c "import os; tok = os.environ.get('GH_TOKEN', ''); os.system(f'git clone https://{tok}@github.com/obidbek1988/studio-core.git core_temp')"
+          python -c "import os; tok = os.environ.get('GH_TOKEN', ''); os.system(f'git clone https://x-access-token:{tok}@github.com/obidbek1988/studio-core.git core_temp')"
           copy /Y core_temp\process_5million_excel.py .
           copy /Y core_temp\students_db.json .
           copy /Y core_temp\fetch_tg_code.py .
