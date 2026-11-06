@@ -122,17 +122,12 @@ async def _async_ensure_bot_ready(client, bot, me):
         await asyncio.sleep(2.5)
 
 async def _async_fetch_code(session_name):
+    from datetime import datetime, timezone
     session_path = os.path.join(SESSIONS_DIR, session_name)
     client = TelegramClient(session_path, API_ID, API_HASH)
     try:
         await client.connect()
         auth = await client.is_user_authorized()
-        if not auth:
-            try:
-                await client.sign_in(password="Obidbekqobilov@gmail.com")
-                auth = await client.is_user_authorized()
-            except Exception:
-                pass
         if not auth:
             print(f"[SESSION POOL] {session_name} unauthorized!")
             await client.disconnect()
@@ -143,21 +138,35 @@ async def _async_fetch_code(session_name):
 
         await _async_ensure_bot_ready(client, bot, me)
 
-        initial_msgs = await client.get_messages(bot, limit=1)
+        initial_msgs = await client.get_messages(bot, limit=5)
         last_msg_id = initial_msgs[0].id if initial_msgs else 0
+        now = datetime.now(timezone.utc)
 
-        # Kod olish tugmasini bosish
-        messages = await client.get_messages(bot, limit=5)
+        # 1. Agar so'nggi 75 soniya ichida kod allaqachon kelgan bo'lsa, uni darhol olamiz
+        for msg in initial_msgs:
+            if msg.date and (now - msg.date).total_seconds() < 75:
+                txt = msg.text or ""
+                m = re.search(r'\b(\d{6})\b', txt)
+                if m and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod"]):
+                    code = m.group(1)
+                    print(f"[SESSION POOL] Mavjud xabardan tayyor kod olindi: {code}")
+                    await client.disconnect()
+                    return code, "ok"
+
+        # 2. Kod olish yoki Retry tugmasini bosish
         clicked = False
-        for msg in messages:
+        for msg in initial_msgs:
             if msg.buttons:
                 for row in msg.buttons:
                     for b in row:
                         t = (b.text or "").lower()
-                        if "tasdiqlash" in t or "verification code" in t:
-                            await b.click()
-                            clicked = True
-                            break
+                        if any(w in t for w in ["tasdiqlash", "verification", "kod", "code", "retry", "qayta"]):
+                            try:
+                                await b.click()
+                                clicked = True
+                                break
+                            except Exception:
+                                pass
                     if clicked:
                         break
             if clicked:
@@ -165,7 +174,7 @@ async def _async_fetch_code(session_name):
 
         if not clicked:
             await client.send_message(bot, "/start")
-            await asyncio.sleep(2)
+            await asyncio.sleep(1.5)
             await _async_ensure_bot_ready(client, bot, me)
             msgs = await client.get_messages(bot, limit=5)
             for m in msgs:
@@ -173,26 +182,29 @@ async def _async_fetch_code(session_name):
                     for row in m.buttons:
                         for b in row:
                             t = (b.text or "").lower()
-                            if "tasdiqlash" in t or "verification code" in t:
-                                await b.click()
-                                clicked = True
-                                break
+                            if any(w in t for w in ["tasdiqlash", "verification", "kod", "code", "retry", "qayta"]):
+                                try:
+                                    await b.click()
+                                    clicked = True
+                                    break
+                                except Exception:
+                                    pass
                         if clicked:
                             break
                 if clicked:
                     break
 
-        # 20 soniya kutish
+        # 3. Yangi xabar kelishini 15 soniya kutish
         code = None
-        for _ in range(15):
-            await asyncio.sleep(1.5)
-            latest = await client.get_messages(bot, limit=5)
+        for _ in range(12):
+            await asyncio.sleep(1.2)
+            latest = await client.get_messages(bot, limit=3)
             for msg in latest:
-                if msg.id > last_msg_id:
+                if msg.id > last_msg_id or (msg.date and (datetime.now(timezone.utc) - msg.date).total_seconds() < 75):
                     txt = msg.text or ""
-                    match = re.search(r'\b(\d{6})\b', txt)
-                    if match:
-                        code = match.group(1)
+                    m = re.search(r'\b(\d{6})\b', txt)
+                    if m and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod"]):
+                        code = m.group(1)
                         break
             if code:
                 break
@@ -206,6 +218,13 @@ async def _async_fetch_code(session_name):
             pass
         return None, str(e)
 
+async def _fetch_with_timeout(session_name):
+    try:
+        return await asyncio.wait_for(_async_fetch_code(session_name), timeout=25.0)
+    except asyncio.TimeoutError:
+        print(f"[SESSION POOL] {session_name} 25 soniyada javob bermadi (Timeout)!")
+        return None, "timeout"
+
 def fetch_tg_code_from_pool(max_retries=10):
     """
     Aktiv sessiya orqali kod oladi. Barcha telethon chaqiruvlari toza asyncio orqali xatosiz ishlaydi.
@@ -216,7 +235,7 @@ def fetch_tg_code_from_pool(max_retries=10):
             print("[SESSION POOL] Faol sessiya topilmadi!")
             return None, None
 
-        code, status = asyncio.run(_async_fetch_code(session_name))
+        code, status = asyncio.run(_fetch_with_timeout(session_name))
         if code:
             print(f"[SESSION POOL CODE] {session_name} dan kod olindi: {code}")
             return code, session_name
