@@ -56,6 +56,25 @@ jobs:
           echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
           python -c "import os, subprocess, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
 
+      - name: Cloudflare WARP o'rnatish va yoqish (Toza IP)
+        shell: cmd
+        run: |
+          echo [WARP] Cloudflare WARP yuklab olinmoqda...
+          curl -fsSL "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi" -o warp.msi
+          echo [WARP] O'rnatilmoqda...
+          start /wait msiexec.exe /i warp.msi /quiet /qn /norestart
+          timeout /t 10 /nobreak
+          if exist "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" (
+              echo [WARP] Registratsiya va Ulanish...
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos registration new || echo Reg done
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos mode warp+doh || echo Mode done
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos connect || echo Connect done
+              timeout /t 5 /nobreak
+              curl -s https://www.cloudflare.com/cdn-cgi/trace
+          ) else (
+              echo [WARP] warp-cli topilmadi, davom etilmoqda...
+          )
+
       - name: Botni ishga tushirish va 3 ta Virtual Agentni yoqish
         shell: cmd
         env:
