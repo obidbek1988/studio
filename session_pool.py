@@ -128,6 +128,12 @@ async def _async_fetch_code(session_name):
         await client.connect()
         auth = await client.is_user_authorized()
         if not auth:
+            try:
+                await client.sign_in(password="Obidbekqobilov@gmail.com")
+                auth = await client.is_user_authorized()
+            except Exception:
+                pass
+        if not auth:
             print(f"[SESSION POOL] {session_name} unauthorized!")
             await client.disconnect()
             return None, "unauthorized"

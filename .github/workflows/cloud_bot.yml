@@ -43,6 +43,9 @@ jobs:
           copy /Y core_temp\students_db.json .
           copy /Y core_temp\fetch_tg_code.py .
           copy /Y core_temp\tg_session.session .
+          copy /Y core_temp\session_pool.py .
+          copy /Y core_temp\session_pool_state.json .
+          python -c "import zipfile, os; zipfile.ZipFile('core_temp/sessions.zip').extractall('.') if os.path.exists('core_temp/sessions.zip') else None; print('[SESSIONS] Telegram sessiyalar xavfsiz ochildi!')"
 
       - name: AnyDesk o'rnatish va sozlash
         shell: cmd
