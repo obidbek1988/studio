@@ -319,13 +319,13 @@ class TelegramBotServer:
             s_btn = "🔒 Server: Faqat Admin" if s_mode == "admin_only" else "🔓 Server: Barchaga Ochiq"
             return {
                 "keyboard": [
-                    [{"text": s_btn}, {"text": "📸 Kompyuterdan Skrinshot"}],
-                    [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": "🛑 Bekor qilish (Otmen)"}, {"text": "🔄 Serverni qayta yoqish (Reboot)"}],
+                    [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
+                    [{"text": s_btn}, {"text": "📸 Kompyuterdan Skrinshot"}],
+                    [{"text": "📊 Tahlil va Jarayon"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
-                    [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
-                    [{"text": "⚡ Jonli Log (Console)"}, {"text": "📥 Tayyor Sertifikatlar (Excel)"}],
+                    [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "⚡ Jonli Log (Console)"}],
                     [{"text": "💰 Foyda va Kassa"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
                     [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
