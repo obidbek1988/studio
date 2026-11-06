@@ -327,7 +327,7 @@ class TelegramBotServer:
         return {
             "keyboard": [
                 [{"text": "📥 Excel Shablon olish"}, {"text": "📸 To'lov chekini yuborish"}],
-                [{"text": "💰 Narxlar va 50% Avans"}, {"text": "👨‍💼 Admin bilan aloqa"}],
+                [{"text": "💰 Rasmiy Narxlar"}, {"text": "👨‍💼 Admin bilan aloqa"}],
             ],
             "resize_keyboard": True,
             "is_persistent": False,
@@ -827,7 +827,6 @@ class TelegramBotServer:
                     # Qat'iy tarif: 4 000 so'm (1 ta o'quvchi uchun)
                     price_per_cert = 4000
                     total_price = student_cnt * price_per_cert
-                    advance_price = int(total_price * 0.5)
 
                     pending_orders[chat_id] = {
                         'chat_id': chat_id,
@@ -835,8 +834,7 @@ class TelegramBotServer:
                         'path': saved_path,
                         'orig_fname': orig_fname,
                         'student_cnt': student_cnt,
-                        'total_price': total_price,
-                        'advance_price': advance_price
+                        'total_price': total_price
                     }
 
                     invoice_msg = (
@@ -846,7 +844,6 @@ class TelegramBotServer:
                         f"👥 O'quvchilar soni: <b>{student_cnt} ta</b>\n"
                         f"💵 Tarif: <b>4 000 so'm</b> (1 ta sertifikat)\n"
                         f"💰 Jami to'lov summasi: <b>{total_price:,} so'm</b>\n"
-                        f"⚡ <b>50% Boshlang'ich to'lov (Avans):</b> <b>{advance_price:,} so'm</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"💳 <b>To'lov uchun karta:</b>\n"
                         f"<code>5614 6812 1100 2260</code>\n"
@@ -864,7 +861,7 @@ class TelegramBotServer:
                                 f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
                                 f"📁 Fayl: <code>{orig_fname}</code>\n"
                                 f"👥 O'quvchilar: <b>{student_cnt} ta</b>\n"
-                                f"💰 Kutilayotgan summa: <b>{total_price:,} so'm</b> (Avans: {advance_price:,} so'm)\n"
+                                f"💰 Kutilayotgan summa: <b>{total_price:,} so'm</b>\n"
                                 f"ℹ️ Mijozdan to'lov cheki kutilmoqda."
                             )
                         except Exception:
@@ -903,7 +900,7 @@ class TelegramBotServer:
                     f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
                     f"📁 Fayl: <code>{po['orig_fname']}</code>\n"
                     f"👥 O'quvchilar: <b>{po['student_cnt']} ta</b>\n"
-                    f"💰 Summa: <b>{po['total_price']:,} so'm</b> (Avans: {po['advance_price']:,} so'm)\n"
+                    f"💰 Summa: <b>{po['total_price']:,} so'm</b>\n"
                     f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
                     f"To'lovni tekshirib, quyidagi tugmalar orqali tasdiqlang 👇"
                 )
@@ -1271,18 +1268,18 @@ class TelegramBotServer:
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return
 
-        # 19. 💰 Narxlar va 50% Avans
-        if text in ("💰 Narxlar va 50% Avans", "/narxlar", "/tariflar", "💰 Tariflar", "Tariflar"):
+        # 19. 💰 Rasmiy Narxlar
+        if text in ("💰 Rasmiy Narxlar", "/narxlar", "/tariflar", "💰 Tariflar", "Tariflar", "💰 Narxlar va 50% Avans"):
             card = self.config.get("card_info")
             msg = (
                 "💰 <b>RASMIY TARIF VA TO'LOV TIZIMI:</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
                 "• 1 ta sertifikat narxi: <b>4 000 so'm</b> (Qat'iy narx)\n"
                 "⚠️ <b>Cheklov:</b> 1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.\n\n"
-                "🌗 <b>50% Avans Imkoniyati:</b>\n"
-                "Buyurtma berayotganda summaning <b>50% qismini</b> avans sifatida to'lab ishni boshlashingiz mumkin. "
-                "Qolgan 50% qismini barcha sertifikatlar tayyor bo'lgach to'laysiz!\n\n"
-                f"🏦 <b>Karta:</b> <code>{card}</code>\n\n"
+                "💳 <b>To'lov tartibi:</b>\n"
+                "To'lov 100% to'liq amalga oshirilib, chek tasdiqlangach, buyurtma avtomatik navbatga qo'yiladi va to'liq yakunlanadi!\n\n"
+                f"🏦 <b>Karta:</b> <code>{card}</code>\n"
+                "👤 QOBILOV OBIDJON\n\n"
                 "🔄 <b>100% Kafolat:</b> Tizim barcha o'quvchilarni to'liq sertifikat bilan ta'minlaydi!"
             )
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
