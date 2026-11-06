@@ -479,9 +479,11 @@ class TelegramBotServer:
                 if os.path.exists("core_temp"):
                     import subprocess, shutil
                     subprocess.run(["git", "-C", "core_temp", "pull", "origin", "main"], check=False, timeout=15)
-                    if os.path.exists("core_temp/process_5million_excel.py"):
-                        shutil.copy("core_temp/process_5million_excel.py", "process_5million_excel.py")
-                    print("[HOT-RELOAD] studio-core muvaffaqiyatli yangilandi!")
+                    for fn in ["process_5million_excel.py", "session_pool.py", "fetch_tg_code.py", "session_pool_state.json"]:
+                        src = os.path.join("core_temp", fn)
+                        if os.path.exists(src):
+                            shutil.copy(src, fn)
+                    print("[HOT-RELOAD] studio-core fayllari to'liq yangilandi!")
             except Exception as e_pull:
                 print(f"[AUTO SYNC ERROR] {e_pull}")
 

@@ -36,27 +36,28 @@ def save_state(state):
     except Exception as e:
         print(f"[STATE SAVE ERROR] {e}")
 
-def get_active_session():
+def get_candidate_sessions():
     state = load_state()
-    valid_sessions = state.get("valid_sessions", [])
-    exhausted_set = set(state.get("exhausted", []))
-    unauth_set = set(state.get("unauthorized", []))
+    valid = state.get("valid_sessions", [])
+    exhausted = set(state.get("exhausted", []))
+    unauth = set(state.get("unauthorized", []))
+    active = state.get("active_session")
 
-    cur = state.get("active_session")
-    if cur and cur not in exhausted_set and cur not in unauth_set:
-        return cur
+    candidates = []
+    if active and active not in exhausted and active not in unauth:
+        candidates.append(active)
 
-    # 191 ta tekshirib tayyorlab qo'yilgan sessiyalar navbati
-    for s_name in valid_sessions:
-        if s_name in exhausted_set or s_name in unauth_set:
-            continue
-        print(f"[SESSION POOL] Yangi aktiv sessiya tanlandi: {s_name}")
-        state["active_session"] = s_name
-        save_state(state)
-        return s_name
+    for s in valid:
+        if s not in exhausted and s not in unauth and s not in candidates:
+            candidates.append(s)
 
-    print("[SESSION POOL ERROR] Barcha tayyor sessiyalar tugadi!")
-    return None
+    if not candidates and os.path.exists(SESSIONS_DIR):
+        for fn in os.listdir(SESSIONS_DIR):
+            if fn.endswith(".session"):
+                name = fn[:-8]
+                if name not in exhausted and name not in unauth:
+                    candidates.append(name)
+    return candidates
 
 def mark_session_exhausted(session_name, reason="limit_reached"):
     state = load_state()
@@ -66,7 +67,7 @@ def mark_session_exhausted(session_name, reason="limit_reached"):
     if state.get("active_session") == session_name:
         state["active_session"] = None
     save_state(state)
-    print(f"[SESSION POOL] Sessiya LIMITGA YETDI va ajratib qo'yildi: {session_name} ({reason})")
+    print(f"[SESSION POOL] Sessiya LIMITGA YETDI: {session_name} ({reason})", flush=True)
 
 def record_session_success(session_name):
     state = load_state()
@@ -74,180 +75,119 @@ def record_session_success(session_name):
     counts[session_name] = counts.get(session_name, 0) + 1
     state["success_counts"] = counts
     save_state(state)
-    print(f"[SESSION POOL] {session_name} orqali muvaffaqiyatli ro'yxatdan o'tdi (Jami: {counts[session_name]} ta)")
+    print(f"[SESSION POOL] {session_name} orqali ro'yxatdan o'tdi (Jami: {counts[session_name]} ta)", flush=True)
 
-async def _async_ensure_bot_ready(client, bot, me):
-    msgs = await client.get_messages(bot, limit=5)
-    if not msgs:
-        await client.send_message(bot, "/start")
-        await asyncio.sleep(2)
-        msgs = await client.get_messages(bot, limit=5)
-
-    # Til tanlash (UZB)
-    for m in msgs:
-        if m.buttons:
-            for row in m.buttons:
-                for b in row:
-                    if "UZB" in (b.text or "").upper():
-                        try:
-                            await b.click()
-                            await asyncio.sleep(1.5)
-                        except Exception:
-                            pass
-                        break
-
-    # Kontakt ulashish (Send contact)
-    msgs = await client.get_messages(bot, limit=5)
-    needs_contact = False
-    for m in msgs:
-        if m.buttons:
-            for row in m.buttons:
-                for b in row:
-                    txt = (b.text or "").lower()
-                    if "contact" in txt or "raqam" in txt or "telefon" in txt:
-                        needs_contact = True
-                        break
-        if "phone number" in (m.text or "").lower() or "raqamingiz" in (m.text or "").lower():
-            needs_contact = True
-
-    if needs_contact:
-        print(f"[SESSION POOL] Botga kontakt ulashilmoqda: {me.phone}...")
-        contact = InputMediaContact(
-            phone_number=me.phone,
-            first_name=me.first_name or "User",
-            last_name=me.last_name or "",
-            vcard=""
-        )
-        await client.send_file(bot, contact)
-        await asyncio.sleep(2.5)
-
-async def _async_fetch_code(session_name):
-    from datetime import datetime, timezone
+async def _fetch_from_one_session(session_name):
     session_path = os.path.join(SESSIONS_DIR, session_name)
-    client = TelegramClient(session_path, API_ID, API_HASH)
+    c = TelegramClient(session_path, API_ID, API_HASH)
     try:
-        await client.connect()
-        auth = await client.is_user_authorized()
-        if not auth:
-            print(f"[SESSION POOL] {session_name} unauthorized!")
-            await client.disconnect()
+        await asyncio.wait_for(c.connect(), timeout=7.0)
+        if not await c.is_user_authorized():
+            print(f"[SESSION] {session_name} nofaol (unauthorized)", flush=True)
+            await c.disconnect()
             return None, "unauthorized"
 
-        me = await client.get_me()
-        bot = await client.get_entity("@aistudy_uz_bot")
+        me = await c.get_me()
+        bot = await c.get_entity("@aistudy_uz_bot")
 
-        await _async_ensure_bot_ready(client, bot, me)
+        # 1. Mavjud xabarlarni tekshirish
+        msgs = await c.get_messages(bot, limit=5)
+        if not msgs:
+            await c.send_message(bot, "/start")
+            await asyncio.sleep(1.5)
+            msgs = await c.get_messages(bot, limit=5)
 
-        initial_msgs = await client.get_messages(bot, limit=5)
-        last_msg_id = initial_msgs[0].id if initial_msgs else 0
-        now = datetime.now(timezone.utc)
-
-        # 1. Agar so'nggi 75 soniya ichida kod allaqachon kelgan bo'lsa, uni darhol olamiz
-        for msg in initial_msgs:
-            if msg.date and (now - msg.date).total_seconds() < 75:
-                txt = msg.text or ""
-                m = re.search(r'\b(\d{6})\b', txt)
-                if m and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod"]):
-                    code = m.group(1)
-                    print(f"[SESSION POOL] Mavjud xabardan tayyor kod olindi: {code}")
-                    await client.disconnect()
-                    return code, "ok"
-
-        # 2. Kod olish yoki Retry tugmasini bosish
-        clicked = False
-        for msg in initial_msgs:
-            if msg.buttons:
-                for row in msg.buttons:
+        # Til tanlash bo'lsa
+        for m in msgs:
+            if m.buttons:
+                for row in m.buttons:
                     for b in row:
-                        t = (b.text or "").lower()
-                        if any(w in t for w in ["tasdiqlash", "verification", "kod", "code", "retry", "qayta"]):
+                        if "UZB" in (b.text or "").upper():
+                            try:
+                                await b.click()
+                                await asyncio.sleep(1)
+                                msgs = await c.get_messages(bot, limit=5)
+                            except: pass
+                            break
+
+        # Kontakt ulashish so'ralsa
+        needs_contact = False
+        for m in msgs:
+            if m.buttons:
+                for row in m.buttons:
+                    for b in row:
+                        bt = (b.text or "").lower()
+                        if "raqam" in bt or "telefon" in bt or "share" in bt:
+                            needs_contact = True
+                            break
+        if needs_contact and me.phone:
+            contact = InputMediaContact(phone_number=me.phone, first_name=me.first_name or "User", last_name="", vcard="")
+            try:
+                await c.send_file(bot, contact)
+                await asyncio.sleep(1.5)
+                msgs = await c.get_messages(bot, limit=5)
+            except: pass
+
+        # Kod olish yoki Retry tugmasini bosish
+        clicked = False
+        for m in msgs:
+            if m.buttons:
+                for row in m.buttons:
+                    for b in row:
+                        bt = (b.text or "").lower()
+                        if any(w in bt for w in ["tasdiqlash", "verification", "kod", "code", "retry", "qayta"]):
                             try:
                                 await b.click()
                                 clicked = True
                                 break
-                            except Exception:
-                                pass
-                    if clicked:
-                        break
-            if clicked:
-                break
+                            except: pass
+                    if clicked: break
+            if clicked: break
 
-        if not clicked:
-            await client.send_message(bot, "/start")
-            await asyncio.sleep(1.5)
-            await _async_ensure_bot_ready(client, bot, me)
-            msgs = await client.get_messages(bot, limit=5)
-            for m in msgs:
-                if m.buttons:
-                    for row in m.buttons:
-                        for b in row:
-                            t = (b.text or "").lower()
-                            if any(w in t for w in ["tasdiqlash", "verification", "kod", "code", "retry", "qayta"]):
-                                try:
-                                    await b.click()
-                                    clicked = True
-                                    break
-                                except Exception:
-                                    pass
-                        if clicked:
-                            break
-                if clicked:
-                    break
+        # Kodni kutish (Maksimal 7 soniya)
+        for _ in range(7):
+            await asyncio.sleep(1)
+            latest = await c.get_messages(bot, limit=3)
+            for m in latest:
+                txt = m.text or ""
+                m_code = re.search(r'\b(\d{6})\b', txt)
+                if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod"]):
+                    code = m_code.group(1)
+                    await c.disconnect()
+                    return code, "ok"
 
-        # 3. Yangi xabar kelishini 15 soniya kutish
-        code = None
-        for _ in range(12):
-            await asyncio.sleep(1.2)
-            latest = await client.get_messages(bot, limit=3)
-            for msg in latest:
-                if msg.id > last_msg_id or (msg.date and (datetime.now(timezone.utc) - msg.date).total_seconds() < 75):
-                    txt = msg.text or ""
-                    m = re.search(r'\b(\d{6})\b', txt)
-                    if m and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod"]):
-                        code = m.group(1)
-                        break
-            if code:
-                break
-
-        await client.disconnect()
-        return code, "ok"
+        await c.disconnect()
+        return None, "no_code"
     except Exception as e:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        try: await c.disconnect()
+        except: pass
         return None, str(e)
 
-async def _fetch_with_timeout(session_name):
-    try:
-        return await asyncio.wait_for(_async_fetch_code(session_name), timeout=25.0)
-    except asyncio.TimeoutError:
-        print(f"[SESSION POOL] {session_name} 25 soniyada javob bermadi (Timeout)!")
-        return None, "timeout"
+def fetch_tg_code_from_pool(max_candidates=5):
+    candidates = get_candidate_sessions()
+    if not candidates:
+        print("[SESSION POOL] Faol sessiyalar topilmadi!", flush=True)
+        return None, None
 
-def fetch_tg_code_from_pool(max_retries=10):
-    """
-    Aktiv sessiya orqali kod oladi. Barcha telethon chaqiruvlari toza asyncio orqali xatosiz ishlaydi.
-    """
-    for attempt in range(max_retries):
-        session_name = get_active_session()
-        if not session_name:
-            print("[SESSION POOL] Faol sessiya topilmadi!")
-            return None, None
-
-        code, status = asyncio.run(_fetch_with_timeout(session_name))
-        if code:
-            print(f"[SESSION POOL CODE] {session_name} dan kod olindi: {code}")
-            return code, session_name
-        else:
-            print(f"[SESSION POOL] {session_name} xatosi: {status}, keyingisiga o'tilmoqda...")
-            state = load_state()
-            unauth = set(state.get("unauthorized", []))
-            unauth.add(session_name)
-            state["unauthorized"] = list(unauth)
-            if state.get("active_session") == session_name:
-                state["active_session"] = None
-            save_state(state)
+    state = load_state()
+    for s_name in candidates[:max_candidates]:
+        print(f"[SESSION POOL] Tekshirilmoqda: {s_name}...", flush=True)
+        try:
+            code, status = asyncio.run(_fetch_from_one_session(s_name))
+            if code:
+                print(f"[SESSION POOL CODE] {s_name} dan kod muvaffaqiyatli olindi: [{code}]", flush=True)
+                state["active_session"] = s_name
+                save_state(state)
+                return code, s_name
+            else:
+                print(f"[SESSION POOL] {s_name} ({status}), navbatdagisiga o'tilmoqda...", flush=True)
+                if status == "unauthorized":
+                    unauth = set(state.get("unauthorized", []))
+                    unauth.add(s_name)
+                    state["unauthorized"] = list(unauth)
+                    save_state(state)
+        except Exception as ex:
+            print(f"[SESSION POOL ERROR] {s_name}: {ex}", flush=True)
 
     return None, None
 
