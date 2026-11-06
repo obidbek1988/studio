@@ -84,8 +84,16 @@ DEFAULT_CONFIG = {
     "card_info": os.environ.get("CARD_INFO", "5614 6812 1100 2260 (QOBILOV OBIDJON)"),
     "anydesk_id": "1873514815",
     "anydesk_pwd": "UzbekCoders2026!",
-    "cert_price": 4000
+    "cert_price": 4000,
+    "server_mode": "public"
 }
+
+# Navbat va buyurtmalar xotirasi
+pending_orders = {}  # { chat_id: { 'path': ..., 'orig_fname': ..., 'student_cnt': ..., 'total_price': ..., 'user_name': ... } }
+order_queue = []     # [ { 'chat_id': ..., 'user_name': ..., 'path': ..., 'orig_fname': ..., 'student_cnt': ..., 'total_price': ... } ]
+is_queue_worker_running = False
+queue_lock = threading.Lock()
+current_active_order = None
 
 def load_config():
     cfg = DEFAULT_CONFIG.copy()
@@ -519,6 +527,21 @@ class TelegramBotServer:
                 local_file_path,
                 caption=f"✅ 5 Million Prompter Tayyor Sertifikatlar ({success_cnt}/{total_cnt} ta) | Vaqt: {dur_str}"
             )
+
+            # Agar bu mijoz bo'lsa va admin boshqa odam bo'lsa, adminga ham yakunlangani haqida xabar berish
+            if self.admin_id and chat_id != self.admin_id:
+                try:
+                    self.send_message(
+                        self.admin_id,
+                        f"🎉 <b>Mijoz buyurtmasi yakunlandi:</b>\n"
+                        f"👤 <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                        f"📁 Fayl: <code>{orig_fname}</code>\n"
+                        f"📊 Natija: <b>{success_cnt}/{total_cnt} ta</b> sertifikat olindi!\n"
+                        f"⏱ Vaqt: <b>{dur_str}</b>"
+                    )
+                except Exception:
+                    pass
+
         except Exception as e:
             print(f"[5MILLION ENGINE ERROR] {e}")
             traceback.print_exc()
@@ -528,6 +551,46 @@ class TelegramBotServer:
                 f"❌ <b>5 Million Prompter jarayonida xatolik yuz berdi:</b>\n"
                 f"<code>{str(e)[:300]}</code>"
             )
+
+    def start_queue_worker(self):
+        """Umumiy navbat ishchisi (Navbatdagi buyurtmalarni ketma-ket bittalab bajaruvchi konveyer)"""
+        global is_queue_worker_running, current_active_order
+        with queue_lock:
+            if is_queue_worker_running:
+                return
+            is_queue_worker_running = True
+
+        def worker_loop():
+            global is_queue_worker_running, current_active_order
+            print("[QUEUE WORKER] Navbat ishchisi faollashdi.")
+            while True:
+                next_order = None
+                with queue_lock:
+                    if order_queue:
+                        next_order = order_queue.pop(0)
+                        current_active_order = next_order
+                    else:
+                        is_queue_worker_running = False
+                        current_active_order = None
+                        break
+
+                if next_order:
+                    try:
+                        print(f"[QUEUE EXECUTE] Buyurtma boshlanmoqda: {next_order['orig_fname']} (Chat: {next_order['chat_id']})")
+                        self.run_5million_pipeline(
+                            next_order['chat_id'],
+                            next_order['user_name'],
+                            next_order['path'],
+                            next_order['orig_fname']
+                        )
+                    except Exception as we:
+                        print(f"[QUEUE WORKER ERROR] {we}")
+                    finally:
+                        current_active_order = None
+
+            print("[QUEUE WORKER] Navbatdagi barcha buyurtmalar tugadi. Ishchi kutish rejimida.")
+
+        threading.Thread(target=worker_loop, daemon=True).start()
 
     # =========================================================================
     # BUYRUQLAR VA TUGMALARNI QAYTA ISHLASH (PROCESS UPDATE)
@@ -557,6 +620,51 @@ class TelegramBotServer:
             if data == "refresh_logs":
                 self.answer_callback_query(cb_id, "Loglar yangilandi! ⚡")
                 self.send_live_console_log(chat_id, edit_msg_id=msg_id)
+                return
+
+            if data.startswith("approve_order_"):
+                uid = int(data.split("_")[2])
+                po = pending_orders.pop(uid, None)
+                if not po:
+                    self.answer_callback_query(cb_id, "Buyurtma topilmadi yoki allaqachon navbatga qo'yilgan!", show_alert=True)
+                    return
+
+                with queue_lock:
+                    order_queue.append(po)
+                    pos = len(order_queue)
+                    ahead_students = sum(item.get('student_cnt', 0) for item in order_queue[:-1])
+                    if current_active_order:
+                        ahead_students += current_active_order.get('student_cnt', 0)
+                    ahead_minutes = max(1, ahead_students * 1)
+
+                self.answer_callback_query(cb_id, f"Buyurtma #{pos}-o'rinda navbatga qo'yildi! ✅", show_alert=True)
+                self.edit_message(chat_id, msg_id, f"✅ <b>Buyurtma TASDIQLANDI va Navbatga qo'yildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📋 Navbat raqami: <b>#{pos}</b> ({ahead_students} ta bola oldinda)")
+
+                if pos == 1 and not current_active_order:
+                    queue_msg = (
+                        f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
+                        f"🚀 <b>Buyurtmangiz bo'yicha ish boshlandi!</b>\n"
+                        f"📁 Fayl: <b>{po['orig_fname']}</b> ({po['student_cnt']} ta o'quvchi)\n\n"
+                        f"<i>(Har bir o'quvchining sertifikati tayyor bo'lishi bilan shu yerga jonli hisobot keladi)</i>"
+                    )
+                else:
+                    queue_msg = (
+                        f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
+                        f"📋 <b>Siz navbatda #{pos}-o'rindasiz.</b>\n"
+                        f"👥 Oldingizda: <b>{ahead_students} ta o'quvchi</b> (hozir bajarilmoqda)\n"
+                        f"⏱ <b>Taxminiy navbat kelish vaqti:</b> ~<b>{ahead_minutes} daqiqa</b>\n\n"
+                        f"🚀 <i>Navbatingiz kelishi bilanoq sertifikatlar chiqarish avtomatik boshlanadi!</i>"
+                    )
+                self.send_message(uid, queue_msg)
+                self.start_queue_worker()
+                return
+
+            if data.startswith("reject_order_"):
+                uid = int(data.split("_")[2])
+                pending_orders.pop(uid, None)
+                self.answer_callback_query(cb_id, "Buyurtma rad etildi ❌", show_alert=True)
+                self.send_message(uid, "❌ <b>Buyurtmangiz yoki to'lov chekingiz tasdiqlanmadi.</b>\nIltimos, to'g'ri to'lov chekini qayta yuboring yoki Admin bilan bog'laning.")
+                self.edit_message(chat_id, msg_id, f"❌ <b>Buyurtma RAD ETILDI!</b> (Mijoz: <code>{uid}</code>)")
                 return
 
             if data.startswith("approve_check_"):
@@ -676,6 +784,7 @@ class TelegramBotServer:
                     admin_input_state.pop(chat_id, None)
 
                     # 40 ta o'quvchi cheklovi tekshiruvi
+                    student_cnt = 1
                     try:
                         import openpyxl
                         wb_chk = openpyxl.load_workbook(saved_path, read_only=True)
@@ -684,7 +793,7 @@ class TelegramBotServer:
                         for row in ws_chk.iter_rows(values_only=True):
                             if row and any(row):
                                 row_cnt += 1
-                        student_cnt = max(0, row_cnt - 1)
+                        student_cnt = max(1, row_cnt - 1)
                         wb_chk.close()
                         if student_cnt > 40 and not is_admin:
                             self.send_message(
@@ -699,12 +808,68 @@ class TelegramBotServer:
                     except Exception as ec:
                         print(f"[STUDENT COUNT CHECK ERROR] {ec}")
 
-                    print(f"[PIPELINE BOSHLANMOQDA] 5 Million Prompter brauzer ochilmoqda...")
-                    threading.Thread(
-                        target=self.run_5million_pipeline,
-                        args=(chat_id, user_name, saved_path, orig_fname),
-                        daemon=True
-                    ).start()
+                    # 1. AGAR ADMIN YUBORGAN BO'LSA: Darhol navbatga qo'yilib ish boshlanadi!
+                    if is_admin:
+                        self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi). Navbatga qo'yildi va ishga tushmoqda...")
+                        with queue_lock:
+                            order_queue.append({
+                                'chat_id': chat_id,
+                                'user_name': user_name,
+                                'path': saved_path,
+                                'orig_fname': orig_fname,
+                                'student_cnt': student_cnt,
+                                'total_price': 0
+                            })
+                        self.start_queue_worker()
+                        return
+
+                    # 2. AGAR MIJOZ YUBORGAN BO'LSA: Hisob-kitob qilib, to'lov cheki so'raladi!
+                    # Qat'iy tarif: 4 000 so'm (1 ta o'quvchi uchun)
+                    price_per_cert = 4000
+                    total_price = student_cnt * price_per_cert
+                    advance_price = int(total_price * 0.5)
+
+                    pending_orders[chat_id] = {
+                        'chat_id': chat_id,
+                        'user_name': user_name,
+                        'path': saved_path,
+                        'orig_fname': orig_fname,
+                        'student_cnt': student_cnt,
+                        'total_price': total_price,
+                        'advance_price': advance_price
+                    }
+
+                    invoice_msg = (
+                        f"📥 <b>Excel faylingiz muvaffaqiyatli qabul qilindi!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📁 Fayl: <b>{orig_fname}</b>\n"
+                        f"👥 O'quvchilar soni: <b>{student_cnt} ta</b>\n"
+                        f"💵 Tarif: <b>4 000 so'm</b> (1 ta sertifikat)\n"
+                        f"💰 Jami to'lov summasi: <b>{total_price:,} so'm</b>\n"
+                        f"⚡ <b>50% Boshlang'ich to'lov (Avans):</b> <b>{advance_price:,} so'm</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"💳 <b>To'lov uchun karta:</b>\n"
+                        f"<code>5614 6812 1100 2260</code>\n"
+                        f"👤 QOBILOV OBIDJON\n\n"
+                        f"📸 <i>Iltimos, to'lovni amalga oshirgach, to'lov chekini (skrinshotini) shu yerga rasm sifatida yuboring!</i>\n"
+                        f"Administrator to'lovni tasdiqlashi bilanoq buyurtmangiz navbatga qo'yiladi."
+                    )
+                    self.send_message(chat_id, invoice_msg, reply_markup=self.get_reply_keyboard(chat_id))
+
+                    if self.admin_id:
+                        try:
+                            self.send_message(
+                                self.admin_id,
+                                f"📥 <b>YANGI EXCEL BUYURTMA KELDI (To'lov kutilmoqda):</b>\n"
+                                f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                                f"📁 Fayl: <code>{orig_fname}</code>\n"
+                                f"👥 O'quvchilar: <b>{student_cnt} ta</b>\n"
+                                f"💰 Kutilayotgan summa: <b>{total_price:,} so'm</b> (Avans: {advance_price:,} so'm)\n"
+                                f"ℹ️ Mijozdan to'lov cheki kutilmoqda."
+                            )
+                        except Exception:
+                            pass
+                    return
                 else:
                     print(f"[XATO] Faylni yuklab olib bo'lmadi!")
                     self.send_message(chat_id, "❌ Faylni yuklab olishda xatolik yuz berdi. Qayta urinib ko'ring.")
@@ -731,20 +896,40 @@ class TelegramBotServer:
                 return
 
             # Oddiy foydalanuvchining to'lov cheki
-            caption = (
-                f"💳 <b>YANGI TO'LOV CHEKI QABUL QILINDI!</b>\n\n"
-                f"👤 Foydalanuvchi: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
-                f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
-                f"To'lovni tekshirib, quyidagi tugmalar orqali tasdiqlang 👇"
-            )
-            markup = {
-                "inline_keyboard": [
-                    [
-                        {"text": "✅ Tasdiqlash", "callback_data": f"approve_check_{chat_id}"},
-                        {"text": "❌ Rad etish", "callback_data": f"reject_check_{chat_id}"}
+            po = pending_orders.get(chat_id)
+            if po:
+                caption = (
+                    f"💳 <b>YANGI TO'LOV CHEKI VA BUYURTMA!</b>\n\n"
+                    f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                    f"📁 Fayl: <code>{po['orig_fname']}</code>\n"
+                    f"👥 O'quvchilar: <b>{po['student_cnt']} ta</b>\n"
+                    f"💰 Summa: <b>{po['total_price']:,} so'm</b> (Avans: {po['advance_price']:,} so'm)\n"
+                    f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
+                    f"To'lovni tekshirib, quyidagi tugmalar orqali tasdiqlang 👇"
+                )
+                markup = {
+                    "inline_keyboard": [
+                        [
+                            {"text": "✅ Tasdiqlash va Navbatga qo'yish", "callback_data": f"approve_order_{chat_id}"},
+                            {"text": "❌ Rad etish", "callback_data": f"reject_order_{chat_id}"}
+                        ]
                     ]
-                ]
-            }
+                }
+            else:
+                caption = (
+                    f"💳 <b>YANGI TO'LOV CHEKI QABUL QILINDI!</b>\n\n"
+                    f"👤 Foydalanuvchi: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                    f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
+                    f"To'lovni tekshirib, quyidagi tugmalar orqali tasdiqlang 👇"
+                )
+                markup = {
+                    "inline_keyboard": [
+                        [
+                            {"text": "✅ Tasdiqlash", "callback_data": f"approve_check_{chat_id}"},
+                            {"text": "❌ Rad etish", "callback_data": f"reject_check_{chat_id}"}
+                        ]
+                    ]
+                }
 
             # Adminga yuborish
             if self.admin_id:
@@ -754,7 +939,7 @@ class TelegramBotServer:
             self.send_message(
                 chat_id,
                 "✅ <b>To'lov chekingiz adminga tekshirish uchun yuborildi!</b>\n"
-                "Tez orada chek tasdiqlanadi va buyurtmangiz ishga tushadi.",
+                "Admin to'lovni tasdiqlashi bilanoq buyurtmangiz navbatga qo'yiladi va navbat raqamingiz xabar qilinadi.",
                 reply_markup=self.get_reply_keyboard(chat_id)
             )
             return
@@ -804,12 +989,8 @@ class TelegramBotServer:
                 f"🎓 <b>5 MILLION PROMPTER (omp.aistudy.uz) AVTOMAT TIZIMI</b>\n\n"
                 f"🤖 Ushbu bot orqali o'quvchilaringizning 5 Million Prompter sertifikatlarini "
                 f"to'liq avtomatik, 100% testlarni yechgan holda olishingiz mumkin.\n\n"
-                f"💰 <b>Tariflar:</b>\n"
-                f"• 1 – 25 ta o'quvchi: <b>4 000 so'm</b> dan\n"
-                f"• 26 – 50 ta o'quvchi: <b>3 500 so'm</b> dan\n"
-                f"• 51 – 100 ta o'quvchi: <b>3 000 so'm</b> dan\n"
-                f"• 100 tadan ortiq: <b>Kelishilgan narxda</b>\n\n"
-                f"⚠️ <i>Hozircha 1 ta buyurtma uchun maksimal 40 ta o'quvchi qabul qilinadi.</i>\n\n"
+                f"💰 <b>Tarif:</b> <b>4 000 so'm</b> (1 ta sertifikat uchun)\n"
+                f"⚠️ <i>1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.</i>\n\n"
                 f"👨‍💻 <b>Administrator:</b> {admin_user}"
             )
             if is_adm:
@@ -1094,18 +1275,15 @@ class TelegramBotServer:
         if text in ("💰 Narxlar va 50% Avans", "/narxlar", "/tariflar", "💰 Tariflar", "Tariflar"):
             card = self.config.get("card_info")
             msg = (
-                "💰 <b>TARIFLAR VA TO'LOV TIZIMI:</b>\n"
+                "💰 <b>RASMIY TARIF VA TO'LOV TIZIMI:</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                "• 1 – 25 ta o'quvchi: <b>4 000 so'm</b> dan\n"
-                "• 26 – 50 ta o'quvchi: <b>3 500 so'm</b> dan\n"
-                "• 51 – 100 ta o'quvchi: <b>3 000 so'm</b> dan\n"
-                "• 100 tadan ortiq: <b>Kelishilgan narxda</b>\n\n"
-                "⚠️ <b>Cheklov:</b> Hozircha 1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.\n\n"
+                "• 1 ta sertifikat narxi: <b>4 000 so'm</b> (Qat'iy narx)\n"
+                "⚠️ <b>Cheklov:</b> 1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.\n\n"
                 "🌗 <b>50% Avans Imkoniyati:</b>\n"
                 "Buyurtma berayotganda summaning <b>50% qismini</b> avans sifatida to'lab ishni boshlashingiz mumkin. "
                 "Qolgan 50% qismini barcha sertifikatlar tayyor bo'lgach to'laysiz!\n\n"
                 f"🏦 <b>Karta:</b> <code>{card}</code>\n\n"
-                "🔄 <b>100% Kafolat:</b> Tizim o'quvchilarni to'liq sertifikat bilan ta'minlaydi!"
+                "🔄 <b>100% Kafolat:</b> Tizim barcha o'quvchilarni to'liq sertifikat bilan ta'minlaydi!"
             )
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return
