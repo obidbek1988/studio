@@ -473,6 +473,17 @@ class TelegramBotServer:
                 except Exception as ex:
                     print(f"[5M TG UPDATE ERROR] {ex}")
 
+            # Har bir yangi buyurtma kelganda eng so'nggi studio-core kodini avtomatik tortib olish
+            try:
+                if os.path.exists("core_temp"):
+                    import subprocess, shutil
+                    subprocess.run(["git", "-C", "core_temp", "pull", "origin", "main"], check=False, timeout=15)
+                    if os.path.exists("core_temp/process_5million_excel.py"):
+                        shutil.copy("core_temp/process_5million_excel.py", "process_5million_excel.py")
+                    print("[HOT-RELOAD] studio-core muvaffaqiyatli yangilandi!")
+            except Exception as e_pull:
+                print(f"[AUTO SYNC ERROR] {e_pull}")
+
             import importlib
             import process_5million_excel
             importlib.reload(process_5million_excel)
