@@ -196,6 +196,34 @@ def fetch_tg_code_from_pool(max_candidates=5):
 
     return None, None
 
+def fetch_code_for_phone_ending(last_digits, timeout=30.0):
+    """Oxirgi 4 ta raqam bo'yicha sessiyani topib, undan kod olish (Tiklash uchun)"""
+    last_digits = str(last_digits).strip()
+    matched_sessions = []
+    if os.path.exists(SESSIONS_DIR):
+        for fn in os.listdir(SESSIONS_DIR):
+            if fn.endswith(".session"):
+                clean_name = fn[:-8]
+                clean_digits = re.sub(r'\D', '', clean_name)
+                if clean_digits.endswith(last_digits):
+                    matched_sessions.append(clean_name)
+    
+    print(f"[RECOVERY POOL] Oxirgi {last_digits} bo'yicha topilgan sessiyalar: {matched_sessions}", flush=True)
+    for s_name in matched_sessions:
+        print(f"[RECOVERY] {s_name} sessiyasidan kod so'ralmoqda...", flush=True)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                fut = executor.submit(lambda: asyncio.run(_fetch_from_one_session(s_name)))
+                code, status = fut.result(timeout=timeout)
+            if code:
+                print(f"[RECOVERY SUCCESS] Kod olindi: [{code}] (Sessiya: {s_name})", flush=True)
+                return code, s_name
+        except Exception as e:
+            print(f"[RECOVERY ERROR] {s_name}: {e}", flush=True)
+
+    # Agar aniq topilmasa, eng yangi faol sessiyalardan urinib ko'ramiz
+    return fetch_tg_code_from_pool(max_candidates=4)
+
 if __name__ == "__main__":
     code, s = fetch_tg_code_from_pool()
     print("FINAL CODE:", code, "from", s)
