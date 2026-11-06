@@ -321,6 +321,7 @@ class TelegramBotServer:
                 "keyboard": [
                     [{"text": s_btn}, {"text": "📸 Kompyuterdan Skrinshot"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
+                    [{"text": "🛑 Bekor qilish (Otmen)"}, {"text": "🔄 Serverni qayta yoqish (Reboot)"}],
                     [{"text": "🤖 Robot Agentlar Dashboard"}, {"text": "🌐 Web Any (Brauzerda)"}],
                     [{"text": "🧹 Keshni tozalash (Yangi buyurtma)"}, {"text": "🖥 Klaster (Kompyuterlar holati)"}],
                     [{"text": "⚡ Ishlarni bo'lish (Klasterga)"}, {"text": "📊 Tahlil va Jarayon"}],
@@ -1094,6 +1095,55 @@ class TelegramBotServer:
                 "▶️ <b>Jarayonlar muvaffaqiyatli davom ettirilmoqda!</b>\nNavbatdagi o'quvchilar avtomatik ishlanadi.",
                 reply_markup=self.get_reply_keyboard(chat_id)
             )
+            return
+
+        # 4.1. 🛑 Bekor qilish (Otmen) - Barcha buyurtmalarni to'xtatish va tozalash
+        if text in ("🛑 Bekor qilish (Otmen)", "🛑 Barcha buyurtmalarni bekor qilish (Otmen)", "/cancel_all", "/otmen"):
+            with queue_lock:
+                order_queue.clear()
+            self.is_paused = False
+            if PAUSE_FILE.exists():
+                try:
+                    PAUSE_FILE.unlink()
+                except Exception:
+                    pass
+            try:
+                from cluster_manager import cluster_state
+                cluster_state["queue"].clear()
+                cluster_state["in_progress"].clear()
+            except Exception:
+                pass
+            os.system("taskkill /F /IM chrome.exe /T 2>nul")
+            self.clean_cache()
+            self.send_message(
+                chat_id,
+                "🛑 <b>BARCHA BUYURTMALAR TO'LIQ BEKOR QILINDI (OTMEN)!</b>\n\n"
+                "🧹 <i>Eski navbatdagi barcha buyurtmalar, ochiq Chrome brauzerlar va kesh butunlay tozalandi.</i>\n\n"
+                "✅ <b>Endi yangi Excel faylingizni bemalol yuborishingiz mumkin!</b>",
+                reply_markup=self.get_reply_keyboard(chat_id)
+            )
+            return
+
+        # 4.2. 🔄 Serverni qayta yoqish (Reboot) - GitHub Runnerni toza qayta ishga tushirish
+        if text in ("🔄 Serverni qayta yoqish (Reboot)", "🔄 Qayta yoqish", "/reboot", "/restart"):
+            gh_tok = os.environ.get("GH_TOKEN", "") or self.config.get("gh_token", "")
+            self.send_message(
+                chat_id,
+                "🔄 <b>Server toza holatda yangidan qayta yoqilmoqda...</b>\n\n"
+                "⏳ <i>1 daqiqa ichida yangi toza IP va yangi AnyDesk ID xabari keladi!</i>",
+                reply_markup=self.get_reply_keyboard(chat_id)
+            )
+            if gh_tok:
+                try:
+                    headers = {"Authorization": f"token {gh_tok}", "Accept": "application/vnd.github+json"}
+                    requests.post(
+                        "https://api.github.com/repos/obidbek1988/studio/actions/workflows/cloud_bot.yml/dispatches",
+                        headers=headers,
+                        json={"ref": "main"},
+                        timeout=10
+                    )
+                except Exception as e_reb:
+                    print(f"[REBOOT ERROR] {e_reb}")
             return
 
         # 5. 🤖 Robot Agentlar Dashboard
