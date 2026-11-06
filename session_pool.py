@@ -169,11 +169,16 @@ def fetch_tg_code_from_pool(max_candidates=5):
         print("[SESSION POOL] Faol sessiyalar topilmadi!", flush=True)
         return None, None
 
+    import concurrent.futures
+
     state = load_state()
     for s_name in candidates[:max_candidates]:
         print(f"[SESSION POOL] Tekshirilmoqda: {s_name}...", flush=True)
         try:
-            code, status = asyncio.run(_fetch_from_one_session(s_name))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s)), s_name)
+                code, status = fut.result(timeout=30.0)
+
             if code:
                 print(f"[SESSION POOL CODE] {s_name} dan kod muvaffaqiyatli olindi: [{code}]", flush=True)
                 state["active_session"] = s_name
