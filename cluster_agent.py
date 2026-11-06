@@ -78,6 +78,10 @@ def solve_student_task(task):
         )
         context.add_init_script("""
             window._sys_dt_bypass = true;
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            window.navigator.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en', 'uz'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
             const style = document.createElement('style');
             style.innerHTML = '.telegram-popup-overlay, .devtools-overlay, .p-dialog-mask { display: none !important; pointer-events: none !important; }';
             if (document.head) {
