@@ -63,6 +63,7 @@ sys.stdout = LogInterceptor(sys.stdout)
 sys.stderr = LogInterceptor(sys.stderr)
 
 # Asosiy yo'llar
+from cluster_manager import start_cluster_server, cluster_state
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "bot_config.json"
 USERS_DB_FILE = BASE_DIR / "bot_users_db.json"
@@ -230,6 +231,12 @@ class TelegramBotServer:
         self.template_path = BASE_DIR / "shablon_5million.xlsx"
         if not self.template_path.exists():
             create_excel_template(str(self.template_path))
+
+        # 5 Million Klaster HTTP serverini ishga tushirish (Master Server - Port: 8080)
+        try:
+            start_cluster_server(port=8080)
+        except Exception as e_cs:
+            print(f"[CLUSTER SERVER INIT] {e_cs}")
 
     # =========================================================================
     # TELEGRAM API ASOSIY METODLARI
@@ -1116,17 +1123,33 @@ class TelegramBotServer:
         # 8. 🖥 Klaster (Kompyuterlar holati)
         if text in ("🖥 Klaster (Kompyuterlar holati)", "🖥 Klaster", "/klaster", "/cluster"):
             stats = self.get_system_stats()
+            c_summary = cluster_state.get_status_summary()
+            
+            agents_text = ""
+            if c_summary["agents"]:
+                for ag in c_summary["agents"]:
+                    icon = "🟢" if ag["active"] else "⚪"
+                    cur_t = f"({ag['current_task']})" if ag["current_task"] else "(Bo'sh)"
+                    agents_text += f"  {icon} <b>{ag['id']}</b>: {cur_t} | Yakunlagan: <b>{ag['done_count']} ta</b> | Ish vaqti: {ag['uptime_min']} daqiqa\n"
+            else:
+                agents_text = "  ℹ️ <i>Hozircha faol virtual agent ulanmagan (Mahalliy oqim xizmatda).</i>\n"
+
+            rem_drain_min = max(0, 330 - c_summary['server_uptime_min'])
             msg = (
-                "🖥 <b>KLASTER VA KOMPYUTERLAR HOLATI:</b>\n"
+                "🖥 <b>5 MILLION KLASTER VA VIRTUAL KOMPYUTERLAR:</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"👑 <b>Master Kompyuter (Asosiy):</b>\n"
-                f"  • Host: <code>{stats['hostname']}</code>\n"
-                f"  • IP: <code>{stats['ip']}</code>\n"
+                f"👑 <b>Master Server (Asosiy Boshqaruv):</b>\n"
+                f"  • Host: <code>{stats['hostname']}</code> (Port: 8080)\n"
                 f"  • CPU: <b>{stats['cpu']}%</b> | RAM: <b>{stats['ram']}% ({stats['ram_used']} / {stats['ram_total']})</b>\n"
-                f"  • Holat: 🟢 <b>Online (Faol)</b>\n\n"
-                f"⚡ <b>AI Solver:</b> OpenAI Whisper Tiny (Lokal)\n"
-                f"⚙️ <b>Playwright:</b> Headless Chromium Workers\n"
-                f"📊 <b>Barcha agentlar aloqada!</b>"
+                f"  • Ish vaqti: <b>{c_summary['server_uptime_min']} daqiqa</b> (Limitgacha: ~<b>{rem_drain_min} daqiqa</b> qoldi)\n\n"
+                f"🤖 <b>Faol Virtual Agentlar ({c_summary['active_agents']} ta):</b>\n"
+                f"{agents_text}\n"
+                f"📊 <b>Klaster Navbati:</b>\n"
+                f"  • Jami vazifalar: <b>{c_summary['total_tasks']} ta</b>\n"
+                f"  • ✅ Tayyor: <b>{c_summary['completed']} ta</b>\n"
+                f"  • ⏳ Jarayonda: <b>{c_summary['in_progress']} ta</b>\n"
+                f"  • 📋 Kutilayotgan: <b>{c_summary['queued']} ta</b>\n\n"
+                f"⚡ <i>3 ta Virtual Agent navbatdagi bolalarni parallel yopadi va havolalarni Excelga yozadi!</i>"
             )
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return
