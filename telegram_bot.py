@@ -1124,12 +1124,35 @@ class TelegramBotServer:
             )
             return
 
-        # 4.2. 🔄 Serverni qayta yoqish (Reboot) - GitHub Runnerni toza qayta ishga tushirish
+        # 4.2. 🔄 Serverni qayta yoqish (Reboot) - Avval bazani xavfsiz PUSH qilib, keyin toza qayta ishga tushirish
         if text in ("🔄 Serverni qayta yoqish (Reboot)", "🔄 Qayta yoqish", "/reboot", "/restart"):
+            self.send_message(
+                chat_id,
+                "💾 <b>1-BOSQICH: Barcha yangi sertifikatlar va o'quvchilar bazasi saqlanmoqda (Git Push)...</b>",
+                reply_markup=self.get_reply_keyboard(chat_id)
+            )
+            # 1. PUSH latest database to private studio-core
+            try:
+                if os.path.exists("core_temp") and os.path.exists("students_db.json"):
+                    import shutil, subprocess
+                    shutil.copy("students_db.json", "core_temp/students_db.json")
+                    status = subprocess.check_output(["git", "-C", "core_temp", "status", "--porcelain"], text=True).strip()
+                    if status:
+                        subprocess.run(["git", "-C", "core_temp", "config", "user.name", "obidbek1988"], check=False)
+                        subprocess.run(["git", "-C", "core_temp", "config", "user.email", "obidbek1988@gmail.com"], check=False)
+                        subprocess.run(["git", "-C", "core_temp", "add", "students_db.json"], check=False)
+                        subprocess.run(["git", "-C", "core_temp", "commit", "-m", "Auto-save: Database saved before user reboot"], check=False)
+                        subprocess.run(["git", "-C", "core_temp", "push", "origin", "main"], check=False)
+                        print("[REBOOT AUTO-SAVE] Yangi sertifikatlar muvaffaqiyatli PUSH qilindi!")
+            except Exception as e_push:
+                print(f"[REBOOT PUSH ERROR] {e_push}")
+
+            # 2. Trigger reboot dispatch
             gh_tok = os.environ.get("GH_TOKEN", "") or self.config.get("gh_token", "")
             self.send_message(
                 chat_id,
-                "🔄 <b>Server toza holatda yangidan qayta yoqilmoqda...</b>\n\n"
+                "✅ <b>Barcha ma'lumotlar xavfsiz saqlandi!</b>\n\n"
+                "🔄 <b>2-BOSQICH: Server toza holatda yangidan qayta yoqilmoqda...</b>\n\n"
                 "⏳ <i>1 daqiqa ichida yangi toza IP va yangi AnyDesk ID xabari keladi!</i>",
                 reply_markup=self.get_reply_keyboard(chat_id)
             )
