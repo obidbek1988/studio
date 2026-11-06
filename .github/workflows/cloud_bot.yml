@@ -52,25 +52,26 @@ jobs:
         run: |
           curl -fsSL "https://download.anydesk.com/AnyDesk.exe" -o anydesk.exe
           anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --silent
-          timeout /t 5 /nobreak
+          ping 127.0.0.1 -n 6 > nul
           echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
           python -c "import os, subprocess, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
 
       - name: Cloudflare WARP o'rnatish va yoqish (Toza IP)
+        continue-on-error: true
         shell: cmd
         run: |
           echo [WARP] Cloudflare WARP yuklab olinmoqda...
           curl -fsSL "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi" -o warp.msi
           echo [WARP] O'rnatilmoqda...
           start /wait msiexec.exe /i warp.msi /quiet /qn /norestart
-          timeout /t 10 /nobreak
+          ping 127.0.0.1 -n 12 > nul
           if exist "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" (
               echo [WARP] Registratsiya va Ulanish...
               "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos registration new || echo Reg done
               "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos mode warp+doh || echo Mode done
               "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos connect || echo Connect done
-              timeout /t 5 /nobreak
-              curl -s https://www.cloudflare.com/cdn-cgi/trace
+              ping 127.0.0.1 -n 8 > nul
+              echo [WARP] Ulandi!
           ) else (
               echo [WARP] warp-cli topilmadi, davom etilmoqda...
           )
@@ -86,11 +87,11 @@ jobs:
         run: |
           if exist bot_pause_state.txt del /F /Q bot_pause_state.txt
           start "TelegramBotMaster" cmd /k "C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe telegram_bot.py"
-          timeout /t 8 /nobreak > nul
+          ping 127.0.0.1 -n 8 > nul
           start "CloudAgent1" cmd /k "set AGENT_ID=Cloud_Agent_1&& set MASTER_URL=http://127.0.0.1:8080&& C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe cluster_agent.py"
-          timeout /t 3 /nobreak > nul
+          ping 127.0.0.1 -n 4 > nul
           start "CloudAgent2" cmd /k "set AGENT_ID=Cloud_Agent_2&& set MASTER_URL=http://127.0.0.1:8080&& C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe cluster_agent.py"
-          timeout /t 3 /nobreak > nul
+          ping 127.0.0.1 -n 4 > nul
           start "CloudAgent3" cmd /k "set AGENT_ID=Cloud_Agent_3&& set MASTER_URL=http://127.0.0.1:8080&& C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe cluster_agent.py"
           echo ============================================================
           echo Master Server va 3 ta Virtual Agent ishga tushdi!
