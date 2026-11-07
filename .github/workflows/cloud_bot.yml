@@ -30,6 +30,7 @@ jobs:
       - name: Kutubxonalarni o'rnatish
         shell: cmd
         run: |
+          choco install ffmpeg -y --no-progress
           python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper telethon soundfile SpeechRecognition
           python -m playwright install chromium
 

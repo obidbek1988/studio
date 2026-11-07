@@ -259,6 +259,10 @@ def fetch_code_for_phone_ending(last_digits, timeout=30.0):
                     matched_sessions.append(clean_name)
     
     print(f"[RECOVERY POOL] Oxirgi {last_digits} bo'yicha topilgan sessiyalar: {matched_sessions}", flush=True)
+    if not matched_sessions:
+        print(f"[RECOVERY POOL] Sessiyalarda oxiri {last_digits} bo'lgan raqam mavjud emas!", flush=True)
+        return None, None
+
     for s_name in matched_sessions:
         print(f"[RECOVERY] {s_name} sessiyasidan kod so'ralmoqda...", flush=True)
         try:
@@ -271,8 +275,7 @@ def fetch_code_for_phone_ending(last_digits, timeout=30.0):
         except Exception as e:
             print(f"[RECOVERY ERROR] {s_name}: {e}", flush=True)
 
-    # Agar aniq topilmasa, eng yangi faol sessiyalardan urinib ko'ramiz
-    return fetch_tg_code_from_pool(max_candidates=4)
+    return None, None
 
 if __name__ == "__main__":
     code, s = fetch_tg_code_from_pool()
