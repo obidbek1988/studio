@@ -8,6 +8,12 @@ import concurrent.futures
 from telethon import TelegramClient
 from telethon.tl.types import InputMediaContact
 
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 API_ID = 26521369
 API_HASH = "fa2e0d37e50c4aa3d54c1537b0d88470"
 
@@ -91,43 +97,55 @@ async def _fetch_from_one_session(session_name):
         me = await c.get_me()
         bot = await c.get_entity("@aistudy_uz_bot")
 
-        # 1. Mavjud xabarlarni tekshirish
-        msgs = await c.get_messages(bot, limit=5)
-        if not msgs:
+        # 1. Botga /start yuborib eng yangi menyuni olish
+        try:
             await c.send_message(bot, "/start")
-            await asyncio.sleep(1.5)
-            msgs = await c.get_messages(bot, limit=5)
+            await asyncio.sleep(1.0)
+        except Exception:
+            pass
+        msgs = await c.get_messages(bot, limit=5)
 
         # Til tanlash bo'lsa
         for m in msgs:
             if m.buttons:
                 for row in m.buttons:
                     for b in row:
-                        if "UZB" in (b.text or "").upper():
+                        if any(w in (b.text or "").upper() for w in ["UZB", "O'ZBEK", "OZBEK"]):
                             try:
                                 await b.click()
-                                await asyncio.sleep(1)
+                                await asyncio.sleep(1.2)
                                 msgs = await c.get_messages(bot, limit=5)
-                            except: pass
+                            except Exception:
+                                pass
                             break
 
         # Kontakt ulashish so'ralsa
-        needs_contact = False
+        contact_btn = None
         for m in msgs:
             if m.buttons:
                 for row in m.buttons:
                     for b in row:
                         bt = (b.text or "").lower()
-                        if "raqam" in bt or "telefon" in bt or "share" in bt:
-                            needs_contact = True
+                        if any(w in bt for w in ["kontakt", "raqam", "telefon", "contact", "share"]):
+                            contact_btn = b
                             break
-        if needs_contact and me.phone:
-            contact = InputMediaContact(phone_number=me.phone, first_name=me.first_name or "User", last_name="", vcard="")
+                    if contact_btn: break
+            if contact_btn: break
+
+        if contact_btn:
             try:
-                await c.send_file(bot, contact)
+                await contact_btn.click(share_phone=True)
                 await asyncio.sleep(1.5)
                 msgs = await c.get_messages(bot, limit=5)
-            except: pass
+            except Exception:
+                if me.phone:
+                    try:
+                        contact = InputMediaContact(phone_number=me.phone, first_name=me.first_name or "User", last_name="", vcard="")
+                        await c.send_file(bot, contact)
+                        await asyncio.sleep(1.5)
+                        msgs = await c.get_messages(bot, limit=5)
+                    except Exception:
+                        pass
 
         # Kod olish yoki Retry tugmasini bosish
         clicked = False
@@ -141,21 +159,47 @@ async def _fetch_from_one_session(session_name):
                                 await b.click()
                                 clicked = True
                                 break
-                            except: pass
+                            except Exception:
+                                pass
                     if clicked: break
             if clicked: break
 
+        if not clicked:
+            # Kontakt yuborilgach menyu biroz kechikishi mumkin, qayta tekshiramiz
+            await asyncio.sleep(1.2)
+            msgs = await c.get_messages(bot, limit=5)
+            for m in msgs:
+                if m.buttons:
+                    for row in m.buttons:
+                        for b in row:
+                            bt = (b.text or "").lower()
+                            if any(w in bt for w in ["tasdiqlash", "verification", "kod", "code", "retry", "qayta"]):
+                                try:
+                                    await b.click()
+                                    clicked = True
+                                    break
+                                except Exception:
+                                    pass
+                        if clicked: break
+                if clicked: break
+
         # Kodni kutish (Maksimal 25 soniya, chunki @aistudy_uz_bot 15-18 soniyada javob beradi)
+        now_ts = time.time()
         for wait_s in range(1, 26):
             await asyncio.sleep(1)
             latest = await c.get_messages(bot, limit=3)
             for m in latest:
+                # FAQAT va FAQAT so'nggi 2 daqiqa ichida kelgan yangi xabarlarni olamiz (eski kodlarni olmaslik uchun!)
+                msg_age = time.time() - m.date.timestamp()
+                if msg_age > 120:
+                    continue
+
                 txt = m.text or ""
                 m_code = re.search(r'\b(\d{6})\b', txt)
                 if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
                     code = m_code.group(1)
                     print(f"\n=======================================================", flush=True)
-                    print(f"[TG BOT XABAR] ({session_name}) dan kelgan xabar:\n{txt.strip()}", flush=True)
+                    print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod keldi ({int(msg_age)}s oldin):\n{txt.strip()}", flush=True)
                     print(f"=======================================================\n", flush=True)
                     await c.disconnect()
                     return code, "ok"
@@ -165,7 +209,7 @@ async def _fetch_from_one_session(session_name):
     except Exception as e:
         try: await c.disconnect()
         except: pass
-        return None, str(e)
+        return None, f"{type(e).__name__}: {e}"
 
 def fetch_tg_code_from_pool(max_candidates=5):
     candidates = get_candidate_sessions()
@@ -181,7 +225,7 @@ def fetch_tg_code_from_pool(max_candidates=5):
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s)), s_name)
-                code, status = fut.result(timeout=30.0)
+                code, status = fut.result(timeout=48.0)
 
             if code:
                 print(f"[SESSION POOL CODE] {s_name} dan kod muvaffaqiyatli olindi: [{code}]", flush=True)
@@ -195,8 +239,10 @@ def fetch_tg_code_from_pool(max_candidates=5):
                     unauth.add(s_name)
                     state["unauthorized"] = list(unauth)
                     save_state(state)
+        except concurrent.futures.TimeoutError:
+            print(f"[SESSION POOL TIMEOUT] {s_name}: 48 soniyada javob kelmadi, navbatdagisiga o'tilmoqda...", flush=True)
         except Exception as ex:
-            print(f"[SESSION POOL ERROR] {s_name}: {ex}", flush=True)
+            print(f"[SESSION POOL ERROR] {s_name}: {type(ex).__name__} ({ex})", flush=True)
 
     return None, None
 

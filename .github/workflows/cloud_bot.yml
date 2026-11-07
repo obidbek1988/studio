@@ -57,7 +57,7 @@ jobs:
           anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --silent
           ping 127.0.0.1 -n 6 > nul
           echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
-          python -c "import os, subprocess, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': f'🖥 <b>YANGI GITHUB SERVER ANYDESK TAYYOR!</b>\n\n🆔 AnyDesk ID: <code>{aid}</code>\n🔑 Parol: <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'})"
+          python -c "import os, subprocess, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': f'🚀 <b>Server muvaffaqiyatli qayta yondi!</b>\nQolgan o\'quvchilarni aynan to\'xtagan joyidan davom ettiraman.\n\n🖥 <b>AnyDesk ID:</b> <code>{aid}</code>\n🔑 <b>Parol:</b> <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'}) if tok and cid else None"
 
       - name: Cloudflare WARP o'rnatish va yoqish (Toza IP)
         continue-on-error: true
@@ -98,20 +98,24 @@ jobs:
           start "CloudAgent3" cmd /k "set AGENT_ID=Cloud_Agent_3&& set MASTER_URL=http://127.0.0.1:8080&& C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe cluster_agent.py"
           echo ============================================================
           echo Master Server va 3 ta Virtual Agent ishga tushdi!
-          echo 5 soat 30 daqiqa (330 daqiqa) doimiy xizmat ko'rsatiladi...
+          echo 5 soat 15 daqiqa (315 daqiqa) doimiy xizmat ko'rsatiladi...
           echo ============================================================
-          for /L %%i in (1,1,330) do (
+          for /L %%i in (1,1,315) do (
               ping 127.0.0.1 -n 60 > nul
           )
-          echo [DRAIN] 5 soat 30 daqiqa to'ldi. Xavfsiz qayta yoqilishga tayyorlanmoqda...
+          echo [DRAIN] 5 soat 15 daqiqa to'ldi. Xavfsiz qayta yoqilishga tayyorlanmoqda...
 
-      - name: Xavfsiz Git Push (Zaxira holati)
+      - name: Xavfsiz Git Push (Zaxira holati va Avto-Restart)
         shell: cmd
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
         run: |
+          python -c "import os, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': '⏰ <b>Server 6 soatlik limitga yaqinlashdi.</b>\nBarcha o\'quvchilar va sessiyalar to\'liq saqlandi! Server yangidan o\'chib-yonadi...', 'parse_mode': 'HTML'}) if tok and cid else None"
           git config --global user.name "StudioCloudCluster"
           git config --global user.email "cloud@studio.local"
-          git add cluster_queue.json
-          git commit -m "Auto-backup cluster state before 5h 30m restart" || echo No changes
+          git add cluster_queue.json students_db.json session_pool_state.json
+          git commit -m "Auto-backup state before restart" || echo No changes
           git push || echo Push skipped
+          python -c "import os, requests; tok = os.environ.get('GH_TOKEN'); requests.post('https://api.github.com/repos/obidbek1988/studio/actions/workflows/cloud_bot.yml/dispatches', headers={'Authorization': f'token {tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main'}, timeout=15) if tok else None; print('[RESTART] Yangi 6 soatlik server ishga tushirildi!')"

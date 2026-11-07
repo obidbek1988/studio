@@ -1514,26 +1514,37 @@ class TelegramBotServer:
         print(f"============================================================")
 
         cloud_start_time = time.time()
-        cloud_max_sec = 4.5 * 3600  # 4.5 soat
+        cloud_max_sec = 5.25 * 3600  # 5 soat 15 daqiqa
         is_cloud = os.environ.get("CLOUD_MODE") == "1" or os.environ.get("GITHUB_ACTIONS") == "true"
 
+        if self.admin_id and is_cloud:
+            try:
+                self.send_message(
+                    self.admin_id,
+                    "🚀 <b>Server muvaffaqiyatli qayta yondi!</b>\nQolgan o'quvchilarni aynan to'xtagan joyidan davom ettiraman."
+                )
+            except Exception:
+                pass
+
         while self.is_running:
-            # Bulut taymerini tekshirish (o'chishdan 30 daqiqa oldin xavfsiz push va qayta yoqish)
+            # Bulut taymerini tekshirish (o'chishdan 45 daqiqa oldin xavfsiz push va qayta yoqish)
             if is_cloud and (time.time() - cloud_start_time >= cloud_max_sec):
-                print("[CLOUD DRAIN] 4.5 soat to'ldi. Yangi buyurtma qabul qilinmaydi!")
-                self.send_message(self.admin_id, "⏳ <b>Bulutli bot: 4.5 soat ishladi.</b> Ma'lumotlar saqlanmoqda va yangi zanjirli oqim ishga tushirilmoqda...")
+                print("[CLOUD DRAIN] 5 soat 15 daqiqa to'ldi. Yangi buyurtma qabul qilinmaydi!")
+                self.send_message(self.admin_id, "⏰ <b>Server 6 soatlik limitga yaqinlashdi.</b>\nBarcha o'quvchilar va sessiyalar to'liq saqlandi! Server yangidan o'chib-yonadi...")
                 
                 # Faqat yangi ish bo'lsa PRIVATE studio-core repoga push qilish
                 try:
                     if os.path.exists("core_temp"):
                         import shutil
                         shutil.copy("students_db.json", "core_temp/students_db.json")
+                        if os.path.exists("session_pool_state.json"):
+                            shutil.copy("session_pool_state.json", "core_temp/session_pool_state.json")
                         status = subprocess.check_output(["git", "-C", "core_temp", "status", "--porcelain"], text=True).strip()
                         if status:
-                            print("[CLOUD PUSH] Yangi sertifikatlar PRIVATE repoga saqlanmoqda...")
+                            print("[CLOUD PUSH] Yangi sertifikatlar va sessiyalar PRIVATE repoga saqlanmoqda...")
                             subprocess.run(["git", "-C", "core_temp", "config", "user.name", "obidbek1988"], check=True)
                             subprocess.run(["git", "-C", "core_temp", "config", "user.email", "obidbek1988@gmail.com"], check=True)
-                            subprocess.run(["git", "-C", "core_temp", "add", "students_db.json"], check=True)
+                            subprocess.run(["git", "-C", "core_temp", "add", "students_db.json", "session_pool_state.json"], check=True)
                             subprocess.run(["git", "-C", "core_temp", "commit", "-m", "Auto-save: Private database updated"], check=True)
                             subprocess.run(["git", "-C", "core_temp", "push", "origin", "main"], check=True)
                             print("[CLOUD PUSH] Muvaffaqiyatli PRIVATE repoga PUSH qilindi!")
