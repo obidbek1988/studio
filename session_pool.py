@@ -4,6 +4,7 @@ import time
 import json
 import re
 import asyncio
+import concurrent.futures
 from telethon import TelegramClient
 from telethon.tl.types import InputMediaContact
 
@@ -144,15 +145,18 @@ async def _fetch_from_one_session(session_name):
                     if clicked: break
             if clicked: break
 
-        # Kodni kutish (Maksimal 7 soniya)
-        for _ in range(7):
+        # Kodni kutish (Maksimal 25 soniya, chunki @aistudy_uz_bot 15-18 soniyada javob beradi)
+        for wait_s in range(1, 26):
             await asyncio.sleep(1)
             latest = await c.get_messages(bot, limit=3)
             for m in latest:
                 txt = m.text or ""
                 m_code = re.search(r'\b(\d{6})\b', txt)
-                if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod"]):
+                if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
                     code = m_code.group(1)
+                    print(f"\n=======================================================", flush=True)
+                    print(f"[TG BOT XABAR] ({session_name}) dan kelgan xabar:\n{txt.strip()}", flush=True)
+                    print(f"=======================================================\n", flush=True)
                     await c.disconnect()
                     return code, "ok"
 
@@ -213,7 +217,7 @@ def fetch_code_for_phone_ending(last_digits, timeout=30.0):
         print(f"[RECOVERY] {s_name} sessiyasidan kod so'ralmoqda...", flush=True)
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                fut = executor.submit(lambda: asyncio.run(_fetch_from_one_session(s_name)))
+                fut = executor.submit(lambda s=s_name: asyncio.run(_fetch_from_one_session(s)))
                 code, status = fut.result(timeout=timeout)
             if code:
                 print(f"[RECOVERY SUCCESS] Kod olindi: [{code}] (Sessiya: {s_name})", flush=True)
