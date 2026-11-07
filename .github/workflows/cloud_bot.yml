@@ -2,8 +2,8 @@ name: Studio 24-7 Cloud Service
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */5 * * *'
+  # schedule:
+  #   - cron: '0 */5 * * *'
 
 concurrency:
   group: studio-cloud-group
