@@ -144,15 +144,20 @@ def save_users_db(db):
         print(f"[SAVE USERS DB ERROR] {e}")
 
 def create_excel_template(file_path):
-    """5 Million Prompter rasmiy Excel shablonini generatsiya qilish"""
+    """5 Million Prompter rasmiy Excel shablonini generatsiya qilish (Rang-barang, professional dizayn)"""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "5 Million O'quvchilar"
 
+    try:
+        ws.views.sheetView[0].showGridLines = True
+    except Exception:
+        pass
+
     headers = [
         "T/r",
         "F.I.SH (Familiya Ism Sharif)",
-        "Tug'ilgan sana (kun.oy.yil)",
+        "Tug'ilgan sana (KK.OO.YYYY)",
         "Metrika seriyasi",
         "Metrika raqami",
         "Sinf",
@@ -161,41 +166,54 @@ def create_excel_template(file_path):
         "Parol"
     ]
 
-    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    font_header = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    fill_header = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid") # Royal Navy
+    font_data = Font(name="Segoe UI", size=10)
     center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center")
+    
     border_thin = Border(
-        left=Side(style='thin', color='D9D9D9'),
-        right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'),
-        bottom=Side(style='thin', color='D9D9D9')
+        left=Side(style='thin', color='CBD5E1'),
+        right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'),
+        bottom=Side(style='thin', color='CBD5E1')
     )
 
+    ws.row_dimensions[1].height = 30
     ws.append(headers)
     for col_num in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col_num)
-        cell.font = header_font
-        cell.fill = header_fill
+        cell.font = font_header
+        cell.fill = fill_header
         cell.alignment = center_align
+        cell.border = border_thin
 
     # Namuna qatorlari
     samples = [
-        [1, "ALIYEV VALI G'ANIYEVICH", "15.04.2012", "I-FR", "1234567", "5-A", "", "", ""],
-        [2, "KARIMOVA MALIKA AZIZ QIZI", "20.09.2013", "II-FR", "7654321", "6-B", "", "", ""],
-        [3, "TOSHPULATOV BEHZOD OTABEK O'G'LI", "05.11.2011", "I-TN", "9876543", "7-V", "", "", ""]
+        [1, "ABDUSATTOROV IMRONMIRZO ILYOSJON O`G`LI", "12.10.2015", "I-FR", "923446", "5-A", "", "", ""],
+        [2, "SOIBJONOV MUHAMMADAMIR NODIRBEK O`G`LI", "16.04.2015", "I-FR", "872670", "5-A", "", "", ""],
+        [3, "SAYFUDDINOV MUHAMMADUMAR YO`LDOSHALI O`G`LI", "25.03.2015", "I-FR", "854578", "5-B", "", "", ""],
+        [4, "IBRAGIMOVA FARZONA FARXOD QIZI", "06.12.2015", "I-FR", "925991", "5-B", "", "", ""],
+        [5, "MADAMINOV MIRISLOMBEK RASHID O`G`LI", "14.08.2015", "I-FR", "928895", "5-V", "", "", ""]
     ]
 
-    for row_data in samples:
+    fill_even = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    fill_odd = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+
+    for idx, row_data in enumerate(samples, start=2):
+        ws.row_dimensions[idx].height = 24
         ws.append(row_data)
-
-    for row in ws.iter_rows(min_row=2, max_row=4, min_col=1, max_col=len(headers)):
-        for cell in row:
+        is_odd = (idx % 2 == 1)
+        r_fill = fill_odd if is_odd else fill_even
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=idx, column=col_idx)
+            cell.font = font_data
+            cell.fill = r_fill
             cell.border = border_thin
-            if cell.column in [1, 3, 4, 5, 6]:
-                cell.alignment = center_align
+            cell.alignment = center_align if col_idx in [1, 3, 4, 5, 6, 9] else left_align
 
-    # Ustun kengliklari
-    col_widths = {1: 8, 2: 36, 3: 20, 4: 18, 5: 18, 6: 12, 7: 35, 8: 30, 9: 18}
+    # Kengaytirilgan ustunlar (hech narsa kesilmaydi!)
+    col_widths = {1: 8, 2: 40, 3: 24, 4: 20, 5: 20, 6: 12, 7: 55, 8: 36, 9: 22}
     for col_idx, width in col_widths.items():
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
 
@@ -264,14 +282,15 @@ class TelegramBotServer:
             data["reply_markup"] = reply_markup
         return self.api_call("sendMessage", data)
 
-    def send_document(self, chat_id, file_path, caption="", reply_markup=None):
+    def send_document(self, chat_id, file_path, caption="", reply_markup=None, custom_filename=None):
         if not os.path.exists(file_path):
             return self.send_message(chat_id, f"❌ Fayl topilmadi: {file_path}")
+        doc_name = custom_filename or os.path.basename(file_path)
         with open(file_path, "rb") as f:
             data = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
             if reply_markup:
                 data["reply_markup"] = json.dumps(reply_markup)
-            return self.api_call("sendDocument", data=data, files={"document": f}, timeout=120)
+            return self.api_call("sendDocument", data=data, files={"document": (doc_name, f)}, timeout=120)
 
     def send_photo(self, chat_id, photo_bytes, caption="", reply_markup=None):
         data = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
@@ -543,10 +562,25 @@ class TelegramBotServer:
                 f"📥 To'ldirilgan va barcha sertifikat havolalari yozilgan Excel fayl quyida yuborilmoqda 👇"
             )
 
+            # Fayl nomiga "Besh Million Prompter Sertifikatlari" qo'shish
+            clean_base = os.path.splitext(orig_fname)[0]
+            clean_base = re.sub(r'^[0-9_]+', '', clean_base).strip(' -_')
+            if not clean_base:
+                clean_base = "Oquvchilar"
+            export_fname = f"{clean_base} - Besh Million Prompter Sertifikatlari.xlsx"
+            export_file_path = os.path.join(ORDERS_DIR, export_fname)
+            try:
+                import shutil
+                shutil.copy2(local_file_path, export_file_path)
+                send_target_path = export_file_path
+            except Exception:
+                send_target_path = local_file_path
+
             self.send_document(
                 chat_id,
-                local_file_path,
-                caption=f"✅ 5 Million Prompter Tayyor Sertifikatlar ({success_cnt}/{total_cnt} ta) | Vaqt: {dur_str}"
+                send_target_path,
+                caption=f"✅ <b>{clean_base}</b> — Tayyor Sertifikatlar ({success_cnt}/{total_cnt} ta) | Vaqt: {dur_str}",
+                custom_filename=export_fname
             )
 
             # Agar bu mijoz bo'lsa va admin boshqa odam bo'lsa, adminga ham yakunlangani haqida xabar berish
