@@ -76,13 +76,19 @@ def mark_session_exhausted(session_name, reason="limit_reached"):
     save_state(state)
     print(f"[SESSION POOL] Sessiya LIMITGA YETDI: {session_name} ({reason})", flush=True)
 
-def record_session_success(session_name):
+def record_session_success(session_name, max_limit=8):
     state = load_state()
     counts = state.get("success_counts", {})
     counts[session_name] = counts.get(session_name, 0) + 1
     state["success_counts"] = counts
+    limit_reached = False
+    if counts[session_name] >= max_limit:
+        mark_session_exhausted(session_name, f"{max_limit}_kod_olindi_limit")
+        limit_reached = True
     save_state(state)
-    print(f"[SESSION POOL] {session_name} orqali ro'yxatdan o'tdi (Jami: {counts[session_name]} ta)", flush=True)
+    print(f"[SESSION POOL] {session_name} orqali kod olindi (Jami: {counts[session_name]}/{max_limit} ta). " + 
+          ("LIMIT TO'LDI, KEYINGI SESSIYAGA O'TILADI!" if limit_reached else ""), flush=True)
+    return limit_reached, counts[session_name]
 
 async def _fetch_from_one_session(session_name):
     session_path = os.path.join(SESSIONS_DIR, session_name)
@@ -228,9 +234,14 @@ def fetch_tg_code_from_pool(max_candidates=5):
                 code, status = fut.result(timeout=48.0)
 
             if code:
-                print(f"[SESSION POOL CODE] {s_name} dan kod muvaffaqiyatli olindi: [{code}]", flush=True)
-                state["active_session"] = s_name
-                save_state(state)
+                limit_reached, count = record_session_success(s_name, max_limit=8)
+                if not limit_reached:
+                    state["active_session"] = s_name
+                    save_state(state)
+                else:
+                    if state.get("active_session") == s_name:
+                        state["active_session"] = None
+                        save_state(state)
                 return code, s_name
             else:
                 print(f"[SESSION POOL] {s_name} ({status}), navbatdagisiga o'tilmoqda...", flush=True)
