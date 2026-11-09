@@ -46,6 +46,9 @@ jobs:
           copy /Y core_temp\tg_session.session .
           copy /Y core_temp\session_pool.py .
           copy /Y core_temp\session_pool_state.json .
+          if exist core_temp\active_order_state.json copy /Y core_temp\active_order_state.json .
+          if not exist orders mkdir orders
+          if exist core_temp\active_order.xlsx copy /Y core_temp\active_order.xlsx orders\active_order.xlsx
           python -c "import zipfile, glob, os; [zipfile.ZipFile(z).extractall('.') for z in glob.glob('core_temp/sessions*.zip')]; print(f'[SESSIONS] Jami {len(glob.glob(\"sessions/*.session\"))} ta sessiya xavfsiz ochildi!')"
 
       - name: AnyDesk o'rnatish va sozlash
@@ -114,9 +117,10 @@ jobs:
           ADMIN_ID: ${{ secrets.ADMIN_ID }}
         run: |
           python -c "import os, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': '⏰ <b>Server 6 soatlik limitga yaqinlashdi.</b>\nBarcha o\'quvchilar va sessiyalar to\'liq saqlandi! Server yangidan o\'chib-yonadi...', 'parse_mode': 'HTML'}) if tok and cid else None"
+          python -c "import os, subprocess, shutil; [shutil.copy2(f, os.path.join('core_temp', os.path.basename(f))) for f in ['students_db.json', 'session_pool_state.json', 'active_order_state.json', 'orders/active_order.xlsx'] if os.path.exists(f) and os.path.exists('core_temp')]; subprocess.run(['git', '-C', 'core_temp', 'config', 'user.name', 'obidbek1988']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'config', 'user.email', 'obidbek1988@gmail.com']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'add', '-A']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'commit', '-m', 'Auto-save state before 6h restart']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'push', 'origin', 'main']) if os.path.exists('core_temp') else None"
           git config --global user.name "StudioCloudCluster"
           git config --global user.email "cloud@studio.local"
-          git add cluster_queue.json students_db.json session_pool_state.json
+          git add cluster_queue.json session_pool_state.json
           git commit -m "Auto-backup state before restart" || echo No changes
           git push || echo Push skipped
           python -c "import os, requests; tok = os.environ.get('GH_TOKEN'); requests.post('https://api.github.com/repos/obidbek1988/studio/actions/workflows/cloud_bot.yml/dispatches', headers={'Authorization': f'token {tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main'}, timeout=15) if tok else None; print('[RESTART] Yangi 6 soatlik server ishga tushirildi!')"
