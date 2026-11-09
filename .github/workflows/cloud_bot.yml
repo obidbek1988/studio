@@ -93,13 +93,13 @@ jobs:
           CLOUD_MODE: "1"
         run: |
           if exist bot_pause_state.txt del /F /Q bot_pause_state.txt
-          start /min "TelegramBotMaster" cmd /k "C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe telegram_bot.py"
+          start /min "TelegramBotMaster" cmd /k "python telegram_bot.py"
           ping 127.0.0.1 -n 8 > nul
-          start /min "CloudAgent1" cmd /k "set AGENT_ID=Cloud_Agent_1&& set MASTER_URL=http://127.0.0.1:8080&& C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe cluster_agent.py"
+          start /min "CloudAgent1" cmd /k "set AGENT_ID=Cloud_Agent_1&& set MASTER_URL=http://127.0.0.1:8080&& python cluster_agent.py"
           ping 127.0.0.1 -n 4 > nul
-          start /min "CloudAgent2" cmd /k "set AGENT_ID=Cloud_Agent_2&& set MASTER_URL=http://127.0.0.1:8080&& C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe cluster_agent.py"
+          start /min "CloudAgent2" cmd /k "set AGENT_ID=Cloud_Agent_2&& set MASTER_URL=http://127.0.0.1:8080&& python cluster_agent.py"
           ping 127.0.0.1 -n 4 > nul
-          start /min "CloudAgent3" cmd /k "set AGENT_ID=Cloud_Agent_3&& set MASTER_URL=http://127.0.0.1:8080&& C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe cluster_agent.py"
+          start /min "CloudAgent3" cmd /k "set AGENT_ID=Cloud_Agent_3&& set MASTER_URL=http://127.0.0.1:8080&& python cluster_agent.py"
           echo ============================================================
           echo Master Server va 3 ta Virtual Agent ishga tushdi!
           echo 5 soat 15 daqiqa (315 daqiqa) doimiy xizmat ko'rsatiladi...

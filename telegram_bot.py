@@ -1093,7 +1093,7 @@ class TelegramBotServer:
                                 row_cnt += 1
                         student_cnt = max(1, row_cnt - 1)
                         wb_chk.close()
-                        if student_cnt > 40 and not is_admin:
+                        if student_cnt > 500 and not is_admin:
                             self.send_message(
                                 chat_id,
                                 f"⚠️ <b>Buyurtma hajmi oshib ketdi!</b>\n\n"
