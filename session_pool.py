@@ -193,35 +193,80 @@ async def _fetch_from_one_session(session_name, exclude_code=None):
                         if clicked: break
                 if clicked: break
 
-        # Kodni kutish - FAQAT tugma bosilgandan keyin kelgan YANGI xabarni olamiz
+        # Kodni kutish - FAQAT tugma bosilgandan keyin kelgan xabarni olamiz
         click_time = time.time()
         if clicked:
-            await asyncio.sleep(2) # Yangi xabar kelishi uchun 2 soniya kutamiz!
+            await asyncio.sleep(2)
 
-        for wait_s in range(1, 26):
+        cand_code = None
+        for wait_s in range(1, 15):
             latest = await c.get_messages(bot, limit=5)
             for m in latest:
                 if m.out:
-                    continue # Biz yozgan xabar emas, faqat botdan kelgan javob!
-                
-                # Tugma bosilishidan OLDIN kelgan eski xabarlarni BUTUNLAY inkor qilamiz!
+                    continue
                 if m.date.timestamp() < (click_time - 10):
                     continue
-                
                 txt = m.text or ""
                 m_code = re.search(r'\b(\d{6})\b', txt)
                 if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
-                    new_code = m_code.group(1)
-                    if exclude_code and new_code == str(exclude_code).strip():
-                        continue # Rad etilgan eski kod bo'lsa olmaymiz
-                    
-                    msg_age = int(time.time() - m.date.timestamp())
-                    print(f"\n=======================================================", flush=True)
-                    print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod keldi ({msg_age}s oldin): [{new_code}]", flush=True)
-                    print(f"=======================================================\n", flush=True)
-                    await c.disconnect()
-                    return new_code, "ok"
+                    cand_code = m_code.group(1)
+                    break
+            if cand_code:
+                break
             await asyncio.sleep(1)
+
+        # YANGI QOIDA: Agar kod avvalgi bilan bir xil bo'lsa, qabul qilinmaydi!
+        # Kod olish tugmasini bosib qayta olinadi (3 martagacha urinish).
+        if cand_code and exclude_code and cand_code == str(exclude_code).strip():
+            print(f"[RETRY SAME CODE] Olingan kod avvalgi bilan bir xil ({cand_code})! 3 martagacha qayta bosiladi...", flush=True)
+            for retry_i in range(1, 4):
+                print(f"[RETRY SAME CODE {retry_i}/3] 'Tasdiqlash kodini olish' tugmasi qayta bosilmoqda...", flush=True)
+                clicked_retry = False
+                msgs_retry = await c.get_messages(bot, limit=5)
+                for mr in msgs_retry:
+                    if mr.buttons:
+                        for row in mr.buttons:
+                            for b in row:
+                                bt = (b.text or "").lower()
+                                if any(w in bt for w in ["tasdiqlash", "kod", "olish", "code", "qayta"]):
+                                    try:
+                                        await b.click()
+                                        clicked_retry = True
+                                        await asyncio.sleep(1.0)
+                                        await b.click()
+                                        break
+                                    except Exception:
+                                        pass
+                            if clicked_retry: break
+                    if clicked_retry: break
+                
+                await asyncio.sleep(2.5)
+                latest_retry = await c.get_messages(bot, limit=5)
+                for mr in latest_retry:
+                    if mr.out: continue
+                    txt_r = mr.text or ""
+                    m_code_r = re.search(r'\b(\d{6})\b', txt_r)
+                    if m_code_r and any(w in txt_r.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
+                        new_cand = m_code_r.group(1)
+                        if new_cand != str(exclude_code).strip():
+                            cand_code = new_cand
+                            print(f"[RETRY SUCCESS] Yangi boshqa kod olindi: {cand_code} (Eski: {exclude_code})", flush=True)
+                            break
+                if cand_code != str(exclude_code).strip():
+                    break
+            
+            # Agar 3 marta urinishda ham bir xil kod o'zgarmasa:
+            if cand_code == str(exclude_code).strip():
+                print(f"[SAME CODE FAILED] 3 marta urinishda ham kod yangilanmadi ({cand_code}). Iloji yo'q, keyingi jarayonga o'tiladi!", flush=True)
+                await c.disconnect()
+                return None, "same_code"
+
+        if cand_code:
+            print(f"\n=======================================================", flush=True)
+            print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod olindi: [{cand_code}]", flush=True)
+            print(f"=======================================================\n", flush=True)
+            await c.disconnect()
+            return cand_code, "ok"
 
         await c.disconnect()
         return None, "no_code"
