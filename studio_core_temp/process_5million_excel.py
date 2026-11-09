@@ -142,25 +142,8 @@ def disconnect_warp():
     return True
 
 def switch_ip():
-    """Cloudflare WARP orqali tubdan yangi toza IP olish"""
-    warp_exe = r"C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe"
-    if os.path.exists(warp_exe):
-        for w_try in range(1, 4):
-            try:
-                print(f"[WARP] Tubdan yangi toza IP olinmoqda ({w_try}/3)...", flush=True)
-                subprocess.run([warp_exe, "--accept-tos", "disconnect"], capture_output=True, timeout=10)
-                time.sleep(1.5)
-                subprocess.run([warp_exe, "--accept-tos", "registration", "new"], capture_output=True, timeout=10)
-                time.sleep(1)
-                subprocess.run([warp_exe, "--accept-tos", "mode", "warp+doh"], capture_output=True, timeout=10)
-                time.sleep(1)
-                subprocess.run([warp_exe, "--accept-tos", "connect"], capture_output=True, timeout=10)
-                time.sleep(3)
-                print(f"[WARP] Yangi toza IP muvaffaqiyatli ulandi!", flush=True)
-                return True
-            except Exception as ew:
-                print(f"[WARP ERROR] {ew}")
-                time.sleep(1)
+    """Tizim barqarorligini saqlash - AnyDesk va tarmoq uzilib ketmasligi uchun barqaror ushlaymiz (100% ishlagan versiya)"""
+    print("[WARP/TARMOQ] Aloqa barqaror, AnyDesk uzilmasligi uchun tarmoq saqlanmoqda...", flush=True)
     time.sleep(2)
     return True
 
@@ -1209,22 +1192,28 @@ def process_single_student(student, update_callback=None):
                 captured_username = [None]
                 def _capture_pinfl(response):
                     try:
-                        if "aistudy.uz" in response.url.lower():
-                            txt = response.text()
-                            # 1. API dan Username ni ajratib olish (Username = NurmatovNurali)
-                            m_u = re.search(r'Username\s*=\s*([a-zA-Z0-9_.-]+)', txt)
-                            if m_u:
-                                captured_username[0] = m_u.group(1).strip()
-                                print(f"[INTERCEPTED USERNAME VIA API] {captured_username[0]}", flush=True)
+                        url_low = response.url.lower()
+                        # Faqat API yoki JSON so'rovlarini tekshiramiz (statik .js fayllarini emas!)
+                        if ("api.aistudy.uz" in url_low or "/api/" in url_low or "account" in url_low) and not url_low.endswith(".js"):
+                            content_type = response.headers.get("content-type", "").lower()
+                            if "json" in content_type or "text" in content_type:
+                                txt = response.text()
+                                # 1. API dan Username ni ajratib olish (Username = NurmatovNurali)
+                                m_u = re.search(r'Username\s*=\s*([a-zA-Z0-9_.-]+)', txt)
+                                if m_u:
+                                    cand_u = m_u.group(1).strip()
+                                    if not any(bad in cand_u.lower() for bad in ["include", "function", "object", "undefined", "true", "false", "window"]):
+                                        captured_username[0] = cand_u
+                                        print(f"[INTERCEPTED USERNAME VIA API] {captured_username[0]}", flush=True)
 
-                            # 2. API dan 14 talik PINFL ni ajratib olish (nollardan iborat bo'lmagan!)
-                            m = re.findall(r'(?:\d[\s\-_]?){14}', txt)
-                            for cand in m:
-                                c_clean = re.sub(r'\D', '', cand)
-                                if len(c_clean) == 14 and not c_clean.startswith("0000"):
-                                    captured_pnfl[0] = c_clean
-                                    print(f"[INTERCEPTED 14-DIGIT PINFL VIA API] {c_clean}", flush=True)
-                                    break
+                                # 2. API dan 14 talik PINFL ni ajratib olish (nollardan iborat bo'lmagan!)
+                                m = re.findall(r'(?:\d[\s\-_]?){14}', txt)
+                                for cand in m:
+                                    c_clean = re.sub(r'\D', '', cand)
+                                    if len(c_clean) == 14 and not c_clean.startswith("0000"):
+                                        captured_pnfl[0] = c_clean
+                                        print(f"[INTERCEPTED 14-DIGIT PINFL VIA API] {c_clean}", flush=True)
+                                        break
                     except Exception:
                         pass
                 try:
