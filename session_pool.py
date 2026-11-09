@@ -90,7 +90,7 @@ def record_session_success(session_name, max_limit=8):
           ("LIMIT TO'LDI, KEYINGI SESSIYAGA O'TILADI!" if limit_reached else ""), flush=True)
     return limit_reached, counts[session_name]
 
-async def _fetch_from_one_session(session_name):
+async def _fetch_from_one_session(session_name, exclude_code=None):
     session_path = os.path.join(SESSIONS_DIR, session_name)
     c = TelegramClient(session_path, API_ID, API_HASH)
     try:
@@ -153,7 +153,7 @@ async def _fetch_from_one_session(session_name):
                     except Exception:
                         pass
 
-        # Kod olish yoki Retry tugmasini bosish
+        # Kod olish tugmasini IKKI MARTA bosish (Aynan yangi kod olish uchun!)
         clicked = False
         for m in msgs:
             if m.buttons:
@@ -164,6 +164,10 @@ async def _fetch_from_one_session(session_name):
                             try:
                                 await b.click()
                                 clicked = True
+                                # 2-marta qayta bosish:
+                                await asyncio.sleep(1.5)
+                                await b.click()
+                                print(f"[TG BOT CLICK] ({session_name}) da kod olish tugmasi 2 marta bosildi!", flush=True)
                                 break
                             except Exception:
                                 pass
@@ -189,26 +193,35 @@ async def _fetch_from_one_session(session_name):
                         if clicked: break
                 if clicked: break
 
-        # Kodni kutish (Maksimal 25 soniya, chunki @aistudy_uz_bot 15-18 soniyada javob beradi)
-        now_ts = time.time()
-        for wait_s in range(1, 26):
-            await asyncio.sleep(1)
-            latest = await c.get_messages(bot, limit=3)
-            for m in latest:
-                # FAQAT va FAQAT so'nggi 2 daqiqa ichida kelgan yangi xabarlarni olamiz (eski kodlarni olmaslik uchun!)
-                msg_age = time.time() - m.date.timestamp()
-                if msg_age > 120:
-                    continue
+        # Kodni kutish - FAQAT tugma bosilgandan keyin kelgan YANGI xabarni olamiz
+        click_time = time.time()
+        if clicked:
+            await asyncio.sleep(2) # Yangi xabar kelishi uchun 2 soniya kutamiz!
 
+        for wait_s in range(1, 26):
+            latest = await c.get_messages(bot, limit=5)
+            for m in latest:
+                if m.out:
+                    continue # Biz yozgan xabar emas, faqat botdan kelgan javob!
+                
+                # Tugma bosilishidan OLDIN kelgan eski xabarlarni BUTUNLAY inkor qilamiz!
+                if m.date.timestamp() < (click_time - 10):
+                    continue
+                
                 txt = m.text or ""
                 m_code = re.search(r'\b(\d{6})\b', txt)
                 if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
-                    code = m_code.group(1)
+                    new_code = m_code.group(1)
+                    if exclude_code and new_code == str(exclude_code).strip():
+                        continue # Rad etilgan eski kod bo'lsa olmaymiz
+                    
+                    msg_age = int(time.time() - m.date.timestamp())
                     print(f"\n=======================================================", flush=True)
-                    print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod keldi ({int(msg_age)}s oldin):\n{txt.strip()}", flush=True)
+                    print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod keldi ({msg_age}s oldin): [{new_code}]", flush=True)
                     print(f"=======================================================\n", flush=True)
                     await c.disconnect()
-                    return code, "ok"
+                    return new_code, "ok"
+            await asyncio.sleep(1)
 
         await c.disconnect()
         return None, "no_code"
@@ -257,7 +270,7 @@ def fetch_tg_code_from_pool(max_candidates=5):
 
     return None, None
 
-def fetch_code_for_phone_ending(last_digits, timeout=30.0):
+def fetch_code_for_phone_ending(last_digits, timeout=30.0, exclude_code=None):
     """Oxirgi 4 ta raqam bo'yicha sessiyani topib, undan kod olish (Tiklash uchun)"""
     last_digits = str(last_digits).strip()
     matched_sessions = []
@@ -278,7 +291,7 @@ def fetch_code_for_phone_ending(last_digits, timeout=30.0):
         print(f"[RECOVERY] {s_name} sessiyasidan kod so'ralmoqda...", flush=True)
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                fut = executor.submit(lambda s=s_name: asyncio.run(_fetch_from_one_session(s)))
+                fut = executor.submit(lambda s=s_name: asyncio.run(_fetch_from_one_session(s, exclude_code=exclude_code)))
                 code, status = fut.result(timeout=timeout)
             if code:
                 print(f"[RECOVERY SUCCESS] Kod olindi: [{code}] (Sessiya: {s_name})", flush=True)
