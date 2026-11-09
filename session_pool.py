@@ -130,7 +130,8 @@ async def _fetch_from_one_session(session_name):
                 msgs = await c.get_messages(bot, limit=5)
             except: pass
 
-        # Kod olish yoki Retry tugmasini bosish
+        # Kod olish tugmasini 1 MARTA bosish
+        click_time = time.time()
         clicked = False
         for m in msgs:
             if m.buttons:
@@ -141,20 +142,22 @@ async def _fetch_from_one_session(session_name):
                             try:
                                 await b.click()
                                 clicked = True
+                                print(f"[TG BOT CLICK] ({session_name}) da 1 marta 'Kod olish' bosildi!", flush=True)
                                 break
                             except: pass
                     if clicked: break
             if clicked: break
 
-        # Kodni kutish (Maksimal 25 soniya, chunki @aistudy_uz_bot 15-18 soniyada javob beradi)
-        now_ts = time.time()
+        # Kodni kutish - FAQAT tugma bosilgandan KEYIN kelgan yangi xabarni olamiz!
+        phone_num = f"+{me.phone}" if me.phone else session_name
         for wait_s in range(1, 26):
             await asyncio.sleep(1)
             latest = await c.get_messages(bot, limit=3)
             for m in latest:
-                # FAQAT va FAQAT so'nggi 2 daqiqa ichida kelgan yangi xabarlarni olamiz (eski kodlarni olmaslik uchun!)
-                msg_age = time.time() - m.date.timestamp()
-                if msg_age > 120:
+                if m.out:
+                    continue
+                # Tugma bosilgandan keyin kelgan xabar bo'lishi shart!
+                if m.date.timestamp() < (click_time - 2):
                     continue
 
                 txt = m.text or ""
@@ -162,10 +165,10 @@ async def _fetch_from_one_session(session_name):
                 if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
                     code = m_code.group(1)
                     print(f"\n=======================================================", flush=True)
-                    print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod keldi ({int(msg_age)}s oldin):\n{txt.strip()}", flush=True)
+                    print(f"[TG BOT XABAR] ({phone_num}) dan YANGI kod keldi: [{code}]", flush=True)
                     print(f"=======================================================\n", flush=True)
                     await c.disconnect()
-                    return code, "ok"
+                    return code, phone_num
 
         await c.disconnect()
         return None, "no_code"
@@ -191,10 +194,11 @@ def fetch_tg_code_from_pool(max_candidates=5):
                 code, status = fut.result(timeout=30.0)
 
             if code:
-                print(f"[SESSION POOL CODE] {s_name} dan kod muvaffaqiyatli olindi: [{code}]", flush=True)
+                phone_display = status if status and status != "ok" else s_name
+                print(f"[SESSION POOL CODE] {phone_display} dan yangi kod olindi: [{code}]", flush=True)
                 state["active_session"] = s_name
                 save_state(state)
-                return code, s_name
+                return code, phone_display
             else:
                 print(f"[SESSION POOL] {s_name} ({status}), navbatdagisiga o'tilmoqda...", flush=True)
                 if status == "unauthorized":
@@ -227,8 +231,9 @@ def fetch_code_for_phone_ending(last_digits, timeout=30.0):
                 fut = executor.submit(lambda s=s_name: asyncio.run(_fetch_from_one_session(s)))
                 code, status = fut.result(timeout=timeout)
             if code:
-                print(f"[RECOVERY SUCCESS] Kod olindi: [{code}] (Sessiya: {s_name})", flush=True)
-                return code, s_name
+                phone_display = status if status and status != "ok" else s_name
+                print(f"[RECOVERY SUCCESS] Kod olindi: [{code}] (Raqam: {phone_display})", flush=True)
+                return code, phone_display
         except Exception as e:
             print(f"[RECOVERY ERROR] {s_name}: {e}", flush=True)
 
