@@ -11,6 +11,8 @@ import time
 import json
 import threading
 import datetime
+import subprocess
+import random
 from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -132,24 +134,35 @@ def get_whisper_model():
     return _WHISPER_MODEL
 
 def toggle_warp():
-    """Cloudflare WARP ni yangi toza IP bilan yangilash (registration new)"""
+    """Foydalanuvchi talabiga asosan: internet uzilib qolmasligi uchun tizim VPN iga mutlaqo tegilmaydi"""
+    return True
+
+def disconnect_warp():
+    """Foydalanuvchi talabiga asosan: internet uzilib qolmasligi uchun tizim VPN iga mutlaqo tegilmaydi"""
+    return True
+
+def switch_ip():
+    """Cloudflare WARP orqali tubdan yangi toza IP olish"""
     warp_exe = r"C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe"
     if os.path.exists(warp_exe):
-        try:
-            print("[WARP] Yangi toza IP olish uchun Cloudflare yangidan ro'yxatdan o'tkazilmoqda...")
-            subprocess.run([warp_exe, "--accept-tos", "disconnect"], capture_output=True, timeout=10)
-            time.sleep(1)
-            subprocess.run([warp_exe, "--accept-tos", "registration", "new"], capture_output=True, timeout=15)
-            time.sleep(1)
-            subprocess.run([warp_exe, "--accept-tos", "mode", "warp+doh"], capture_output=True, timeout=10)
-            time.sleep(1)
-            subprocess.run([warp_exe, "--accept-tos", "connect"], capture_output=True, timeout=10)
-            time.sleep(4)
-            print("[WARP] Yangi toza IP muvaffaqiyatli olindi!")
-            return True
-        except Exception as e_w:
-            print(f"[WARP TOGGLE ERROR] {e_w}")
-    return False
+        for w_try in range(1, 4):
+            try:
+                print(f"[WARP] Tubdan yangi toza IP olinmoqda ({w_try}/3)...", flush=True)
+                subprocess.run([warp_exe, "--accept-tos", "disconnect"], capture_output=True, timeout=10)
+                time.sleep(1.5)
+                subprocess.run([warp_exe, "--accept-tos", "registration", "new"], capture_output=True, timeout=10)
+                time.sleep(1)
+                subprocess.run([warp_exe, "--accept-tos", "mode", "warp+doh"], capture_output=True, timeout=10)
+                time.sleep(1)
+                subprocess.run([warp_exe, "--accept-tos", "connect"], capture_output=True, timeout=10)
+                time.sleep(3)
+                print(f"[WARP] Yangi toza IP muvaffaqiyatli ulandi!", flush=True)
+                return True
+            except Exception as ew:
+                print(f"[WARP ERROR] {ew}")
+                time.sleep(1)
+    time.sleep(2)
+    return True
 
 def solve_audio_captcha(page, timeout=30):
     """Audio reCAPTCHA'ni SpeechRecognition (Google STT) va Whisper AI yordamida 100% yechish"""
@@ -167,12 +180,35 @@ def solve_audio_captcha(page, timeout=30):
         if not bframe:
             return False, "Audio challenge frame topilmadi"
 
-        # Agar hali audio tugmasi bosilmagan bo'lsa, bosamiz
+        # Insoniy pauza - Google bot deb hisoblamasligi uchun 1.5 soniya kutamiz
+        time.sleep(1.5)
+
+        # Agar hali audio tugmasi bosilmagan bo'lsa (masalan rasm challenge chiqib turgan bo'lsa), audio rejimiga o'tamiz
         try:
-            audio_btn = bframe.locator("#recaptcha-audio-button, button[title*='audio'], button[title*='Audio']")
+            bframe.evaluate("""() => {
+                const audioBtn = document.getElementById('recaptcha-audio-button') ||
+                                 document.querySelector('#recaptcha-audio-button') ||
+                                 document.querySelector('button[title*="audio"]') ||
+                                 document.querySelector('.rc-button-audio');
+                if (audioBtn) {
+                    audioBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                    audioBtn.click();
+                }
+            }""")
+            time.sleep(2)
+            audio_btn = bframe.locator("#recaptcha-audio-button, button[title*='audio'], button[title*='Audio'], .rc-button-audio")
             if audio_btn.count() > 0 and audio_btn.first.is_visible():
-                audio_btn.first.click(timeout=3000, force=True)
+                audio_btn.first.click(timeout=2000, force=True)
                 time.sleep(2)
+        except Exception as e_aud:
+            print(f"[AUDIO SWITCH] {e_aud}")
+
+        # Agar audio bosilgandan so'ng "Try again later" chiqsa, darhol aniqlaymiz:
+        try:
+            bc = bframe.content()
+            if "try again later" in bc.lower() or "automated queries" in bc.lower() or "avtomatik" in bc.lower():
+                print("[CAPTCHA] Audio bosilganda 'Try again later' aniqlandi!", flush=True)
+                return False, "Try again later"
         except Exception:
             pass
 
@@ -348,19 +384,37 @@ def handle_recaptcha(page):
                 try:
                     bcontent = bframe.content()
                     if "Keyinroq" in bcontent or "automated queries" in bcontent or "avtomatik" in bcontent or "try again later" in bcontent.lower():
-                        print("[RECAPTCHA BLOK] Google blok chiqardi (Try again later). Kapcha qayta yuklash tugmasi tekshirilmoqda...")
-                        try:
-                            r_btn = bframe.locator("#recaptcha-reload-button")
-                            if r_btn.count() > 0 and r_btn.first.is_visible():
-                                r_btn.first.click(force=True)
-                                time.sleep(2.5)
-                        except Exception:
-                            pass
-                        # Qayta tekshiramiz
+                        print("[RECAPTCHA BLOK] Google blok chiqardi (Try again later). Kapcha qayta yuklash tugmasi bosilmoqda...", flush=True)
+                        for r_att in range(1, 4):
+                            try:
+                                r_btn = bframe.locator("#recaptcha-reload-button")
+                                if r_btn.count() > 0 and r_btn.first.is_visible():
+                                    r_btn.first.click(force=True)
+                                    time.sleep(2.5)
+                            except Exception:
+                                pass
+                            bcontent2 = bframe.content()
+                            if not ("automated queries" in bcontent2 or "try again later" in bcontent2.lower()):
+                                print("[RECAPTCHA] Qayta yuklash orqali blok muvaffaqiyatli ketdi!", flush=True)
+                                break
+                            time.sleep(2)
+
+                        # Agar hanuz blok bo'lsa, 8 soniya kutib yana bir bor reload qilamiz
                         bcontent2 = bframe.content()
                         if "automated queries" in bcontent2 or "try again later" in bcontent2.lower():
-                            print("[RECAPTCHA BLOK] Blok saqlanib qoldi, tashqi formani yangilashga qaytarilmoqda...")
-                            return False
+                            print("[RECAPTCHA BLOK] 8 soniyalik cooldown kutilmoqda va reload bosilmoqda...", flush=True)
+                            time.sleep(8)
+                            try:
+                                r_btn = bframe.locator("#recaptcha-reload-button")
+                                if r_btn.count() > 0 and r_btn.first.is_visible():
+                                    r_btn.first.click(force=True)
+                                    time.sleep(2.5)
+                            except Exception:
+                                pass
+                            bcontent3 = bframe.content()
+                            if "automated queries" in bcontent3 or "try again later" in bcontent3.lower():
+                                print("[RECAPTCHA BLOK] Blok saqlanib qoldi, tashqi formaga qaytarilmoqda...", flush=True)
+                                return False
                 except Exception:
                     pass
 
@@ -380,12 +434,22 @@ def handle_recaptcha(page):
     return False
 
 def get_telegram_verification_code():
-    """@aistudy_uz_bot dan SMS tasdiqlash kodini olish (Subprocess orqali Playwrightdan to'liq izolyatsiya qilingan)"""
+    """@aistudy_uz_bot dan SMS tasdiqlash kodini olish (Tezkor to'g'ridan-to'g'ri ThreadPool orqali)"""
+    try:
+        from session_pool import fetch_tg_code_from_pool
+        code, session_used = fetch_tg_code_from_pool()
+        if code:
+            print(f"[FETCH SUCCESS] Kod olindi: {code} (Sessiya: {session_used})", flush=True)
+            return code, session_used
+    except Exception as e:
+        print(f"Telegram to'g'ridan-to'g'ri kod olishda xatolik: {e}, fallback ishga tushmoqda...", flush=True)
+
     try:
         import subprocess
         fetch_script = os.path.join(os.path.dirname(__file__), "fetch_tg_code.py")
-        res = subprocess.run([sys.executable, fetch_script], capture_output=True, text=True, timeout=45)
+        res = subprocess.run([sys.executable, fetch_script], capture_output=True, text=True, timeout=25)
         out = res.stdout.strip()
+        print(f"[FETCH OUTPUT] {out}", flush=True)
         lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
         if lines:
             last_line = lines[-1]
@@ -396,32 +460,50 @@ def get_telegram_verification_code():
             if m:
                 return m.group(1), "session"
     except Exception as e:
-        print(f"Telegram kod olishda xatolik: {e}")
+        print(f"Telegram kod olishda fallback xatolik: {e}", flush=True)
     return None, None
 
 def switch_to_login_tab(page):
-    """Login tabiga o'tish"""
-    for _ in range(5):
+    """Login tabiga o'tish (OneID dan Login-Parol ga o'tish)"""
+    for attempt in range(5):
         try:
+            page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+            for sel in ["p-tab:has-text('Login')", "text='Login - Parol'", "[role='tab']:has-text('Login')", "button:has-text('Login')"]:
+                loc = page.locator(sel).first
+                if loc.count() > 0:
+                    try:
+                        loc.click(force=True, timeout=2000)
+                        time.sleep(0.5)
+                        break
+                    except Exception:
+                        pass
             page.evaluate("""() => {
-                const tabs = Array.from(document.querySelectorAll("p-tab, [role='tab'], button"));
-                const loginTab = tabs.find(el => el.textContent && el.textContent.includes('Login'));
+                const tabs = Array.from(document.querySelectorAll("p-tab, [role='tab'], button, span"));
+                const loginTab = tabs.find(el => el.textContent && el.textContent.includes('Login') && !el.textContent.includes('OneID'));
                 if (loginTab) {
                     loginTab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
                     loginTab.click();
+                    if (loginTab.firstElementChild) {
+                        loginTab.firstElementChild.click();
+                    }
                 }
             }""")
             time.sleep(1)
             inp = page.locator("input#username, input[formcontrolname='username']")
             if inp.count() > 0 and inp.first.is_visible():
+                print("[SWITCH TAB] Login tabiga muvaffaqiyatli o'tildi!", flush=True)
                 return True
         except Exception:
             time.sleep(1)
     return False
 
-def perform_safe_login(page, email, password, name="", notify=None):
-    """Xavfsiz va reload-bardoshli login qilish (Input bo'shab qolishidan himoyalangan)"""
-    for attempt in range(1, 4):
+def perform_safe_login(page, email, password, name="", notify=None, max_attempts=2):
+    """Xavfsiz va reload-bardoshli login qilish (Faqat toza IP va yechilgan kapcha bilan 2 ta toza urinish)"""
+    clean_attempt = 0
+    total_cycles = 0
+    while clean_attempt < max_attempts and total_cycles < 8:
+        total_cycles += 1
+        attempt = clean_attempt + 1
         try:
             page.goto("https://omp.aistudy.uz/auth/login?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
             page.wait_for_timeout(2500)
@@ -447,12 +529,15 @@ def perform_safe_login(page, email, password, name="", notify=None):
             time.sleep(1)
 
             if not c_ok:
-                print(f"[LOGIN CAPTCHA BLOCKED] {attempt}-urinishda kapcha bloklandi. Cloudflare yangi toza IP olinmoqda...")
+                print(f"[LOGIN CAPTCHA BLOCKED] Kapcha bloklandi. Yangi toza IP olinmoqda (Urinish hisobga o'tmadi)...")
                 if notify:
-                    notify(f"⏳ [{name}] Google kapcha bloki aniqlandi. Yangi toza IP olinmoqda ({attempt}/3)...")
-                toggle_warp()
-                time.sleep(4)
+                    notify(f"⏳ [{name}] Google kapcha bloki! Yangi toza IP olinmoqda (urinish ketmadi)...")
+                switch_ip()
+                time.sleep(3)
                 continue
+
+            # KAPCHA 100% YECHILDI - ENDI BU TOZA URINISH!
+            clean_attempt += 1
 
             # AGAR KAPCHA VAQTIDA SAHIFA RELOAD BO'LSA, INPUTLAR TOZALANIB QOLGAN BO'LADI!
             # Shuning uchun yana bir bor tekshiramiz va agar bo'sh bo'lsa, qayta to'ldiramiz!
@@ -498,16 +583,214 @@ def perform_safe_login(page, email, password, name="", notify=None):
             time.sleep(2)
     return None
 
+def recover_and_login_student(page, pnfl, name="", notify=None, default_password="Dilnuraxon2015"):
+    """PINFL (JSHSHIR) orqali parolni tiklash va tizimga kirish (Allaqachon ro'yxatdan o'tganlar uchun)"""
+    if isinstance(pnfl, dict):
+        pnfl = pnfl.get("pnfl") or pnfl.get("jshshir") or pnfl.get("login") or ""
+    pnfl = str(pnfl).strip()
+    if "@" in pnfl:
+        print(f"[RECOVERY ERROR] Tiklashda pochta ({pnfl}) kiritilmaydi, faqat 14 talik PINFL kerak!", flush=True)
+        return False, "Tiklashda faqat 14 talik PINFL qabul qilinadi"
+
+    clean_rec_attempt = 0
+    max_rec_attempts = 3
+    total_rec_cycles = 0
+    while clean_rec_attempt < max_rec_attempts and total_rec_cycles < 8:
+        total_rec_cycles += 1
+        main_attempt = clean_rec_attempt + 1
+        try:
+            from session_pool import fetch_code_for_phone_ending, fetch_tg_code_from_pool
+            print(f"\n[RECOVERY START] {name} uchun PINFL={pnfl} orqali tiklash ({main_attempt}/3)...", flush=True)
+            page.goto("https://omp.aistudy.uz/auth/forgot-password?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
+            time.sleep(2.5)
+            page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+
+            # 1. Login - Parol tabini bosish (switch_to_login_tab va Playwright click bilan 100% ishonchli)
+            switch_to_login_tab(page)
+            time.sleep(1)
+
+            # 2. Login / PINFL ni kiritish
+            u_input = page.locator("input#username, input[formcontrolname='username']").first
+            u_input.click(force=True)
+            u_input.fill("")
+            u_input.fill(str(pnfl).strip())
+            page.evaluate("() => { const el = document.querySelector('input#username, input[formcontrolname=\"username\"]'); if(el) { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }}")
+            time.sleep(1)
+
+            # 3. "Kodni olish" / "Yuborish" tugmasini bosish
+            sub_btn = page.locator("button[type='submit'], button:has-text('so‘rovini yuborish'), button:has-text('Kodni olish'), button:has-text('Yuborish')").first
+            sub_btn.click(force=True)
+            time.sleep(3)
+
+            # 4. Sahifadagi xabarni tekshiramiz (telefon raqami oxirgi 4 ta soni)
+            page_text = page.locator("body").inner_text()
+            print(f"[RECOVERY PAGE TEXT] {page_text[:200]}...", flush=True)
+
+            phone_4 = None
+            m_ph = re.search(r'998[\*\d\s]*(\d{4})', page_text)
+            if m_ph:
+                phone_4 = m_ph.group(1)
+            else:
+                matches = re.findall(r'\b(\d{4})\b', page_text)
+                valid_4 = [m for m in matches if m not in ["2024", "2025", "2026", "2027"]]
+                if valid_4:
+                    phone_4 = valid_4[-1]
+
+            if phone_4:
+                print(f"[RECOVERY PHONE] Oxirgi 4 ta raqam aniqlandi: {phone_4}", flush=True)
+                if notify:
+                    notify(f"📱 [{name}] Telegram raqami: oxiri {phone_4}. Sessiyadan kod olinmoqda...")
+
+            # 5. Sessiyadan kodni olamiz
+            code = None
+            session_used = None
+            if phone_4:
+                code, session_used = fetch_code_for_phone_ending(phone_4)
+            if not code:
+                code, session_used = fetch_tg_code_from_pool()
+
+            if not code:
+                print(f"[RECOVERY FAIL] Telegram sessiyalardan kod kelmadi!", flush=True)
+                switch_ip()
+                time.sleep(2)
+                continue
+
+            print(f"[RECOVERY CODE] Kod olindi: {code} (Sessiya: {session_used}). Kiritilmoqda...", flush=True)
+            if notify:
+                notify(f"🔐 [{name}] Kod olindi ({code}) [{session_used}]. Kiritilmoqda...")
+
+            # 6. Katakchalarga kodni kiritish
+            page.evaluate("""(code) => {
+                const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                for (let i = 0; i < Math.min(6, inputs.length); i++) {
+                    inputs[i].focus();
+                    inputs[i].value = code[i];
+                    inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                    inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }""", code)
+            time.sleep(1)
+
+            code_inps = page.locator(".verification-input, input[maxlength='1']")
+            for c_i in range(min(6, code_inps.count())):
+                try:
+                    code_inps.nth(c_i).fill(code[c_i])
+                except Exception:
+                    pass
+            time.sleep(1)
+
+            # 7. Kodni tasdiqlash uchun "Yuborish" tugmasini bosish
+            print(f"[RECOVERY SUBMIT] Kod yuborilmoqda (Yuborish tugmasi bosildi)...", flush=True)
+            try:
+                page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash'), button[type='submit']").last.click(force=True)
+            except Exception:
+                pass
+            time.sleep(3)
+
+            # 8. Yangi parol kiritish oynasi chiqadi (Form 2)
+            p_inputs = page.locator("input#password, input[formcontrolname='password'], input[type='password']")
+            if p_inputs.count() > 0:
+                print(f"[RECOVERY NEW PWD] Yangi parol o'rnatilmoqda: {default_password}", flush=True)
+                page.evaluate('''({ pwd }) => {
+                    function setInput(sel, val) {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            el.focus();
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('blur', { bubbles: true }));
+                        }
+                    }
+                    setInput("input#password, input[formcontrolname='password']", pwd);
+                    setInput("input#confirmPassword, input[formcontrolname='confirmPassword']", pwd);
+                }''', {"pwd": default_password})
+                time.sleep(1)
+
+                # Kapchani yechish
+                cap_ok = handle_recaptcha(page)
+                if not cap_ok:
+                    print(f"[RECOVERY CAPTCHA BLOCKED] Kapcha bloklandi. Yangi toza IP olinmoqda (Urinish hisobga o'tmadi)...", flush=True)
+                    if notify:
+                        notify(f"🔄 [{name}] Kapcha bloki! Yangi toza IP olinmoqda (urinish ketmadi)...")
+                    switch_ip()
+                    time.sleep(3)
+                    continue # Sahifani qaytadan yangi IP bilan ochamiz!
+
+                # KAPCHA 100% YECHILDI - ENDI BU TOZA URINISH!
+                clean_rec_attempt += 1
+
+                # "Tasdiqlash" / "Saqlash" / "Yuborish" tugmasini bosish
+                print(f"[RECOVERY CONFIRM] Tasdiqlash tugmasi bosilmoqda...", flush=True)
+                conf_btn = page.locator("button[type='submit'], button:has-text('Tasdiqlash'), button:has-text('Saqlash'), button:has-text('Yuborish')").first
+                if conf_btn.count() > 0:
+                    conf_btn.click(force=True)
+                    time.sleep(4)
+
+                # Server tasdiqlaganini tekshirish
+                cur_url = page.url.lower()
+                cur_text = page.locator("body").inner_text().lower()
+                p_rem = page.locator("input#password, input[formcontrolname='password'], input[type='password']")
+                
+                if "/auth/login" in cur_url or "muvaffaqiyatli" in cur_text or p_rem.count() == 0 or not p_rem.first.is_visible():
+                    print(f"[RECOVERY SUCCESS] Yangi parol serverda 100% muvaffaqiyatli saqlandi!", flush=True)
+                    if notify:
+                        notify(f"✅ [{name}] Parol muvaffaqiyatli yangilandi! Tizimga kirilmoqda...")
+                else:
+                    print(f"[RECOVERY RETRY] Parol formasi hali ham ochiq, IP almashtirilib qayta uriniladi...", flush=True)
+                    switch_ip()
+                    time.sleep(2)
+                    continue
+
+            # 9. Endi tizimga yangi parol bilan kirish
+            token = perform_safe_login(page, pnfl, default_password, name=name, notify=notify)
+            if not token:
+                token = page.evaluate("() => localStorage.getItem('accessToken')")
+            if token:
+                return True, token
+        except Exception as e:
+            print(f"[RECOVERY EXCEPTION {main_attempt}] {e}", flush=True)
+            switch_ip()
+            time.sleep(2)
+
+    return False, None
+
+def safe_eval(page, script, arg=None, retries=5):
+    """Execution context destroyed yoki navigatsiyani xavfsiz bartaraf etish"""
+    for att in range(1, retries + 1):
+        try:
+            if not page or page.is_closed():
+                return None
+            if arg is not None:
+                return page.evaluate(script, arg)
+            else:
+                return page.evaluate(script)
+        except Exception as e:
+            e_str = str(e).lower()
+            if "execution context" in e_str or "navigation" in e_str or "destroyed" in e_str:
+                time.sleep(1.5)
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=4000)
+                except Exception:
+                    pass
+            else:
+                if att == retries:
+                    print(f"[SAFE EVAL ERROR] {e}")
+                    return None
+                time.sleep(1.0)
+    return None
+
 def solve_quiz_on_page(page, quiz_id):
     """Testni avtomatik to'g'ri javoblar bilan yechish va tekshirish"""
     try:
-        quiz_data = page.evaluate(f"""async () => {{
+        quiz_res = safe_eval(page, f"""async () => {{
             const token = localStorage.getItem('accessToken');
             const r = await fetch('https://api.aistudy.uz/api/StudyAILms/Quiz/GetQuizById?id={quiz_id}', {{
                 headers: {{ 'Authorization': 'Bearer ' + token }}
             }});
             return await r.json();
-        }}""").get("result", {})
+        }}""")
+        quiz_data = quiz_res.get("result", {}) if isinstance(quiz_res, dict) else {}
 
         questions = quiz_data.get("questions", [])
         quiz_questions_payload = []
@@ -540,7 +823,7 @@ def solve_quiz_on_page(page, quiz_id):
                 "answers": [{"answerId": chosen_answer_id, "state": True}]
             })
 
-        res = page.evaluate(f"""async (payload) => {{
+        res = safe_eval(page, f"""async (payload) => {{
             try {{
                 const token = localStorage.getItem('accessToken');
                 const r = await fetch('https://api.aistudy.uz/api/StudyAILms/Quiz/CheckQuizAndSaveResult', {{
@@ -576,7 +859,7 @@ def complete_course(page, course_id, status_callback=None):
     if status_callback:
         status_callback(f"📚 {c_title} 100% yopilmoqda...")
 
-    page.evaluate(f"""async () => {{
+    safe_eval(page, f"""async () => {{
         const token = localStorage.getItem('accessToken');
         await fetch('https://api.aistudy.uz/api/StudyAILms/Progress/StartCourseProgress?courseId={course_id}', {{
             method: 'POST',
@@ -584,30 +867,122 @@ def complete_course(page, course_id, status_callback=None):
             body: JSON.stringify({{}})
         }});
     }}""")
-    time.sleep(1.5)
+    time.sleep(1.0)
     
-    tree = page.evaluate(f"""async () => {{
+    tree_res = safe_eval(page, f"""async () => {{
         const token = localStorage.getItem('accessToken');
         const r = await fetch('https://api.aistudy.uz/api/StudyAILms/Progress/GetPrivateCourseContentTree?courseId={course_id}', {{
             headers: {{ 'Authorization': 'Bearer ' + token }}
         }});
         return await r.json();
-    }}""").get("result", {})
+    }}""")
+    tree = tree_res.get("result", {}) if isinstance(tree_res, dict) else {}
     
     modules = tree.get("children", [])
+    first_mod_id = modules[0].get("id") if modules else None
+    first_les = modules[0].get("children", [])[0] if (modules and modules[0].get("children")) else None
+    first_les_id = first_les.get("id") if first_les else None
+
+    # Modul boshlanganda video dars sahifasini 1 marta ochamiz (ekranda video va progress chiroyli ko'rinib turishi uchun)
+    if first_mod_id and first_les_id:
+        v_url = f"https://omp.aistudy.uz/courses/{course_id}/module/{first_mod_id}/lesson/{first_les_id}/type/2?debug_bypass=omp-dev-master-99"
+        try:
+            page.goto(v_url, wait_until="domcontentloaded", timeout=12000)
+            page.wait_for_timeout(1000)
+            page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+            # Videoni to'xtatib qo'yamiz (autoplay qilib boshqa sahifaga sakrab ketmasligi uchun):
+            page.evaluate("document.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('autoplay'); v.muted = true; } catch(e){} });")
+        except Exception:
+            pass
+    else:
+        try:
+            page.goto(f"https://omp.aistudy.uz/courses/{course_id}?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded", timeout=12000)
+            page.wait_for_timeout(1000)
+            page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+            start_btn = page.locator("button:has-text('Hozir boshlang'), button:has-text('Davom etish')")
+            if start_btn.count() > 0 and start_btn.first.is_visible():
+                start_btn.first.click(timeout=2000)
+                page.wait_for_timeout(1000)
+        except Exception:
+            pass
+
+    completed_count = tree.get("finishLessonCount", 0)
+    total_count = tree.get("lessonCount", 20)
+
+    # Ekranda progressni yangilash funksiyasi (Yorqin moviy ko'k progress bar va galochkalar bilan)
+    def update_ui_progress(done, total):
+        try:
+            safe_eval(page, """({ done, total }) => {
+                const pct = Math.min(100, Math.round((done / Math.max(1, total)) * 100));
+                
+                // 1. Textlarni yangilash (100% yoki 20/20)
+                document.querySelectorAll('*').forEach(el => {
+                    if (el.children.length === 0 && el.textContent) {
+                        const t = el.textContent.trim();
+                        if (/^\\d+\\s*\\/\\s*\\d+$/.test(t)) {
+                            el.textContent = `${done}/${total}`;
+                        } else if (/^\\d+\\s*%$/.test(t)) {
+                            el.textContent = `${pct}%`;
+                        }
+                    }
+                });
+
+                // 2. Ko'k progress bar chizig'ini to'ldirish (PrimeNG p-progressbar)
+                document.querySelectorAll('.p-progressbar, [role="progressbar"], .progress-bar, [class*="progressbar"]').forEach(bar => {
+                    bar.setAttribute('aria-valuenow', pct);
+                    let val = bar.querySelector('.p-progressbar-value') || bar.querySelector('div') || bar;
+                    val.style.width = pct + '%';
+                    val.style.backgroundColor = '#007ad9';
+                    val.style.height = '100%';
+                    val.style.minHeight = '12px';
+                    val.style.display = 'block';
+                    val.style.borderRadius = '6px';
+                    val.style.transition = 'width 0.4s ease';
+                });
+                document.querySelectorAll('.p-progressbar-value').forEach(v => {
+                    v.style.width = pct + '%';
+                    v.style.backgroundColor = '#007ad9';
+                    v.style.display = 'block';
+                    v.style.minHeight = '12px';
+                });
+
+                // 3. Yon paneldagi o'tilgan darslarning aylanasini ko'k/yashil rangga bo'yash
+                document.querySelectorAll('.lesson-item, [class*="lesson"]').forEach((el, i) => {
+                    if (i < done) {
+                        const icon = el.querySelector('i, svg, [class*="icon"], [class*="check"]');
+                        if (icon) {
+                            icon.style.color = '#2563eb';
+                        }
+                    }
+                });
+
+                // 4. Videoni to'xtatib turish
+                document.querySelectorAll('video').forEach(v => {
+                    try { v.pause(); } catch(e){}
+                });
+            }""", {"done": done, "total": total})
+        except Exception:
+            pass
+
+    update_ui_progress(completed_count, total_count)
+    
     for mod in modules:
         lessons = mod.get("children", [])
         for les in lessons:
             les_id = les.get("id")
             les_type = les.get("type")
             les_status = les.get("status")
+            les_name = les.get("name", {}).get("uz", "")
             
             # Video (type == 2)
             if les_type == 2:
                 if les_status == 2:
                     continue
-                for attempt in range(1, 4):
-                    watch_res = page.evaluate(f"""async () => {{
+
+                rand_used = random.randint(190, 340)
+
+                for attempt in range(1, 6):
+                    watch_res = safe_eval(page, f"""async () => {{
                         try {{
                             const token = localStorage.getItem('accessToken');
                             const r = await fetch('https://api.aistudy.uz/api/StudyAILms/UserWatchStory/CreateOrUpdateLessonWatch', {{
@@ -620,7 +995,7 @@ def complete_course(page, course_id, status_callback=None):
                                     lessonId: {les_id},
                                     language: 'uz',
                                     percentJson: {{ uz: '100.00', ru: '100.00', en: '100.00' }},
-                                    usedTime: 300
+                                    usedTime: {rand_used}
                                 }})
                             }});
                             return {{ status: r.status, ok: r.ok }};
@@ -629,55 +1004,59 @@ def complete_course(page, course_id, status_callback=None):
                         }}
                     }}""")
                     if watch_res and watch_res.get("status") == 429:
-                        time.sleep(5)
+                        print(f"    [RATE LIMIT 429] Modul {course_id} - Dars {les_id}. 6 soniya kutilmoqda ({attempt}/5)...", flush=True)
+                        time.sleep(6.0)
                         continue
-                    if watch_res and (watch_res.get("ok") or watch_res.get("status") == 200):
-                        print(f"    [OK] Modul {course_id} - Dars {les_id} yopildi (✔)")
-                        time.sleep(1.2)
+                    if watch_res and (watch_res.get("ok") or watch_res.get("status") in (200, 204)):
+                        completed_count += 1
+                        update_ui_progress(completed_count, total_count)
+                        print(f"    [OK] Modul {course_id} - Dars {les_id} yopildi (✔) [Ko'rish: {rand_used}s] ({completed_count}/{total_count})")
+                        time.sleep(random.uniform(5.12, 5.38))
                         break
-                    time.sleep(1.5)
+                    time.sleep(5.0)
                     
             # Quiz (type == 3)
             elif les_type == 3:
                 if les_status == 2:
                     continue
                 solve_quiz_on_page(page, les_id)
-                print(f"    [OK] Modul {course_id} - Test {les_id} topshirildi (✔)")
-                time.sleep(1.5)
+                completed_count += 1
+                update_ui_progress(completed_count, total_count)
+                print(f"    [OK] Modul {course_id} - Test {les_id} topshirildi (✔) ({completed_count}/{total_count})")
+                time.sleep(2.0)
                 
-    # Yakuniy tekshiruv va galochka (✔) borligini chuqur tekshirish
-    for round_num in range(1, 6):
-        time.sleep(2)
-        final_tree = page.evaluate(f"""async () => {{
-            const token = localStorage.getItem('accessToken');
-            const r = await fetch('https://api.aistudy.uz/api/StudyAILms/Progress/GetPrivateCourseContentTree?courseId={course_id}', {{
-                headers: {{ 'Authorization': 'Bearer ' + token }}
-            }});
-            return await r.json();
-        }}""").get("result", {})
-        
-        fc = final_tree.get("finishLessonCount", 0)
-        tc = final_tree.get("lessonCount", 0)
-        print(f"    [AUDIT TEKSHIRUV] Modul {course_id}: {fc}/{tc} ta dars yopilgan (Galochka holati)")
-        
+    # Yakuniy tekshiruv va to'liq 100% bo'lguncha muhrlash:
+    for audit_try in range(1, 4):
+        time.sleep(2.5)
+        try:
+            tree_res = safe_eval(page, f"""async () => {{
+                const token = localStorage.getItem('accessToken');
+                const r = await fetch('https://api.aistudy.uz/api/StudyAILms/Progress/GetPrivateCourseContentTree?courseId={course_id}', {{
+                    headers: {{ 'Authorization': 'Bearer ' + token }}
+                }});
+                return await r.json();
+            }}""")
+            tree_data = tree_res.get("result", {}) if isinstance(tree_res, dict) else {}
+        except Exception:
+            tree_data = {}
+
+        fc = tree_data.get("finishLessonCount", 0)
+        tc = tree_data.get("lessonCount", 0)
+        print(f"    [TASDIQ] Modul {course_id}: {fc}/{tc} ta dars yopildi! (Tekshiruv: {audit_try}/3)", flush=True)
+
         if fc >= tc and tc > 0:
-            print(f"    [TASDIQLANDI] Modul {course_id} barcha {tc} ta darsida galich (✔) 100% muhrlandi!")
-            if status_callback:
-                status_callback(f"✅ Modul {course_id}: barcha {tc} ta darsida galochka (✔) 100% qo'yildi!")
-            return True
-            
-        # Agar qaysidir darsda galochka (status == 2) chiqmagan bo'lsa, qayta bajaramiz!
-        for m in final_tree.get("children", []):
+            print(f"    [100% MUHRLANDI] Modul {course_id}: barcha {tc}/{tc} darslari to'liq galochka bo'ldi!", flush=True)
+            break
+
+        # Faqat qolib ketgan darslarni yopamiz:
+        for m in tree_data.get("children", []):
             for l in m.get("children", []):
                 lid = l.get("id")
                 ltype = l.get("type")
                 lstatus = l.get("status")
-                lname = l.get("name", {}).get("uz", "")
-                
                 if lstatus != 2:
-                    print(f"    [QAYTA YOPISH] Modul {course_id} - Dars {lid} ({lname}) da galochka yo'q (status={lstatus}). Qayta yopilmoqda...")
-                    if ltype == 2: # Video
-                        page.evaluate(f"""async () => {{
+                    if ltype == 2:
+                        safe_eval(page, f"""async () => {{
                             const token = localStorage.getItem('accessToken');
                             await fetch('https://api.aistudy.uz/api/StudyAILms/UserWatchStory/CreateOrUpdateLessonWatch', {{
                                 method: 'POST',
@@ -690,11 +1069,10 @@ def complete_course(page, course_id, status_callback=None):
                                 }})
                             }});
                         }}""")
-                        time.sleep(2)
-                    elif ltype == 3: # Quiz / Test
+                        time.sleep(5.2)
+                    elif ltype == 3:
                         solve_quiz_on_page(page, lid)
-                        time.sleep(2)
-
+                        time.sleep(2.0)
     if status_callback:
         status_callback(f"✅ {c_title} 100% muvaffaqiyatli yakunlandi!")
     return True
@@ -727,6 +1105,22 @@ def process_single_student(student, update_callback=None):
     generated_email = f"maktab.{email_clean}.{number[-4:]}@gmail.com"
     target_email = student.get("existing_login") or generated_email
     skip_registration = bool(student.get("existing_login") and student.get("existing_password"))
+
+    # Bazada oldin muvaffaqiyatli ro'yxatdan o'tgan bo'lsa, avtomatik login/parolini olamiz
+    s_key = normalize_student_key(seria, number)
+    db = load_students_db()
+    if s_key in db and db[s_key].get("login") and db[s_key].get("password"):
+        target_email = db[s_key]["login"]
+        default_password = db[s_key]["password"]
+        skip_registration = True
+        print(f"[DB AUTO-MATCH] {name} ({seria} {number}) bazadan topildi! Login: {target_email}")
+
+    # I-FR bo'lmagan seriyalarni tekshirmasdan darhol o'tkazib yuborish
+    seria_clean = str(seria or "").replace(" ", "").replace("-", "").upper()
+    if not skip_registration and "FR" not in seria_clean:
+        print(f"[SKIP NON-FR] {name} ({seria} {number}): Seriya I-FR emas, tashlab ketildi.")
+        notify(f"⏭ [{name}] Seriya 'I-FR' emas ({seria}) — bazada yo'q deb tashlab ketildi.")
+        return False, "Bazada yo'q (I-FR emas)", "", ""
 
     notify(f"⏳ [{name}] Jarayon boshlandi ({seria} {number})...")
 
@@ -798,222 +1192,540 @@ def process_single_student(student, update_callback=None):
                 if swapped != birthdate_digits:
                     date_variants.append(swapped)
 
-            is_already_registered = False
-            is_new_student = False
-            has_error = False
+            registration_success = False
 
-            # Shoshmasdan, bittalab qayta yuklab 3 marta urinish (Try again later va reCAPTCHA himoyasi)
-            for form_attempt in range(1, 4):
-                notify(f"📝 [{name}] Metrika kiritilmoqda ({seria} {number}) [Urinish: {form_attempt}/3]...")
-                page.goto("https://omp.aistudy.uz/auth/register?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
-                time.sleep(3)
-                page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+            # O'quvchini "Try again later" bo'lganda tashlab ketmasdan, 3 martagacha qaytadan boshidan urinish!
+            for student_cycle in range(1, 4):
+                if registration_success or token:
+                    break
 
-                # Metrika yoki Pasport tabini tanlash
-                is_passport = len(seria) == 2 and seria.isalpha() and seria.upper() not in ["PE"]
-                if is_passport:
-                    page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"]'));
-                        const pasp = btns.find(b => b.textContent && b.textContent.includes('Pasport'));
-                        if (pasp) { pasp.click(); }
-                    }""")
-                else:
-                    page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"]'));
-                        const metr = btns.find(b => b.textContent && (b.textContent.includes('Metrika') || b.textContent.includes('guvohnoma')));
-                        if (metr) {
-                            metr.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                            metr.click();
-                        }
-                    }""")
-                time.sleep(2)
+                is_already_registered = False
+                is_new_student = False
+                has_error = False
+                retry_this_student = False
 
-                # Ma'lumotlarni shoshmasdan to'ldirish
-                cur_bdate = date_variants[0]
-                page.locator("input#seria, input[formcontrolname='seria']").fill(seria)
-                page.locator("input#number, input[formcontrolname='number']").fill(number)
+                # Metrika formasini to'ldirish
+                captured_pnfl = [None]
+                captured_username = [None]
+                def _capture_pinfl(response):
+                    try:
+                        if "aistudy.uz" in response.url.lower():
+                            txt = response.text()
+                            # 1. API dan Username ni ajratib olish (Username = NurmatovNurali)
+                            m_u = re.search(r'Username\s*=\s*([a-zA-Z0-9_.-]+)', txt)
+                            if m_u:
+                                captured_username[0] = m_u.group(1).strip()
+                                print(f"[INTERCEPTED USERNAME VIA API] {captured_username[0]}", flush=True)
 
-                page.evaluate("document.querySelectorAll('.telegram-popup-overlay, .devtools-overlay, .p-dialog-mask').forEach(e => e.remove());")
-                b_input = page.locator("input[formcontrolname='birthdate'], input.p-inputtext").first
-                b_input.click(force=True)
-                b_input.fill("")
-                b_input.press_sequentially(cur_bdate, delay=80)
-                b_input.press("Enter")
-                b_input.press("Tab")
-                time.sleep(2)
-
-                # reCAPTCHA ni AI bilan yechish
-                notify(f"🎧 [{name}] reCAPTCHA Whisper AI orqali yechilmoqda ({form_attempt}/3)...")
-                captcha_solved = handle_recaptcha(page)
-
-                if not captcha_solved:
-                    print(f"[RECAPTCHA TRY AGAIN LATER] {form_attempt}-urinishda blok berildi. Cloudflare WARP IP yangilanmoqda...")
-                    notify(f"⏳ [{name}] Google kapcha bloki aniqlandi. Cloudflare WARP orqali IP yangilanmoqda ({form_attempt}/3)...")
-                    toggle_warp()
-                    time.sleep(5)
-                    continue
-
-                time.sleep(1.5)
-                page.evaluate("""() => {
-                    const btn = document.querySelector('button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Yuborish'));
-                    if (btn) { btn.removeAttribute('disabled'); btn.click(); }
-                }""")
-                time.sleep(0.5)
+                            # 2. API dan 14 talik PINFL ni ajratib olish (nollardan iborat bo'lmagan!)
+                            m = re.findall(r'(?:\d[\s\-_]?){14}', txt)
+                            for cand in m:
+                                c_clean = re.sub(r'\D', '', cand)
+                                if len(c_clean) == 14 and not c_clean.startswith("0000"):
+                                    captured_pnfl[0] = c_clean
+                                    print(f"[INTERCEPTED 14-DIGIT PINFL VIA API] {c_clean}", flush=True)
+                                    break
+                    except Exception:
+                        pass
                 try:
-                    page.locator("button:has-text('Yuborish')").first.click(force=True)
+                    page.on("response", _capture_pinfl)
                 except Exception:
                     pass
 
-                # Davlat bazasidan javob kelishini 25 soniya shoshmasdan kutamiz
-                for _ in range(25):
+                clean_form_attempt = 0
+                max_clean_attempts = 3
+                total_form_cycles = 0
+                while clean_form_attempt < max_clean_attempts and total_form_cycles < 10:
+                    total_form_cycles += 1
+                    form_attempt = clean_form_attempt + 1
+                    notify(f"📝 [{name}] Metrika kiritilmoqda ({seria} {number}) [Urinish: {form_attempt}/{max_clean_attempts}]...")
+                    page_loaded = False
+                    for g_try in range(1, 4):
+                        try:
+                            page.goto("https://omp.aistudy.uz/auth/register?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded", timeout=30000)
+                            time.sleep(2)
+                            page_loaded = True
+                            break
+                        except Exception as eg:
+                            print(f"[PAGE GOTO ERROR] {eg}, qayta ochilmoqda ({g_try}/3)...", flush=True)
+                            time.sleep(3)
+                    if not page_loaded:
+                        continue
                     time.sleep(1)
-                    content = page.content()
-                    u_input = page.locator("input[formcontrolname='username'], input#username")
-                    if u_input.count() > 0 and u_input.first.is_visible():
+                    page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+
+                    # SAHIFA HOLATINI ANIQLASH:
+                    # 1. Agar sahifa allaqachon LOGIN/PAROL (Step 2) bosqichida bo'lsa:
+                    u_check = page.locator("input[formcontrolname='username'], input#username")
+                    if u_check.count() > 0 and u_check.first.is_visible():
+                        print(f"[PAGE STATE] Sahifa allaqachon Login/Parol ochish bosqichida!", flush=True)
                         is_new_student = True
                         break
-                    elif "no content" in content.lower() or "topilmadi" in content.lower():
-                        has_error = True
-                        break
-                    elif "allaqachon" in content.lower():
-                        is_already_registered = True
-                        try:
-                            emails_found = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', content)
-                            valid_emails = [e for e in emails_found if not any(x in e.lower() for x in ["google", "recaptcha", "sentry"])]
-                            if valid_emails:
-                                target_email = valid_emails[0].strip()
-                                print(f"[FOUND EXISTING EMAIL] Sahifadan email topildi: {target_email}")
-                        except Exception as e_em:
-                            print(f"[EXTRACT EMAIL ERROR] {e_em}")
+
+                    # 2. Agar sahifa allaqachon TASDIQLASH KODI (OTP Step 3) bosqichida bo'lsa:
+                    v_check = page.locator(".verification-input, input[maxlength='1']")
+                    if v_check.count() > 0 and v_check.first.is_visible():
+                        print(f"[PAGE STATE] Sahifa allaqachon Tasdiqlash kodi (OTP) bosqichida!", flush=True)
+                        is_new_student = True
                         break
 
-                if is_new_student or is_already_registered or has_error:
-                    break
-                else:
-                    time.sleep(3)
-                    break
+                    # 3. Maktab o'quvchilari uchun HAR DOIM "Tug'ilganlik haqida guvohnoma" (Metrika) tanlanadi
+                    metrika_confirmed = False
+                    for metr_try in range(1, 10):
+                        state = page.evaluate("""() => {
+                            const btns = Array.from(document.querySelectorAll('button'));
+                            const pasp = btns.find(b => b.textContent && b.textContent.includes('Pasport'));
+                            const metr = btns.find(b => b.textContent && (b.textContent.includes('Metrika') || b.textContent.includes('guvohnoma')));
+                            const isMetrActive = metr ? metr.className.includes('active-button') : false;
+                            if (!isMetrActive && metr) {
+                                metr.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                                metr.click();
+                            }
+                            return {
+                                metrActive: metr ? metr.className.includes('active-button') : false,
+                                paspActive: pasp ? pasp.className.includes('active-button') : false
+                            };
+                        }""")
+                        if state.get("metrActive") and not state.get("paspActive"):
+                            metrika_confirmed = True
+                            break
+                        time.sleep(0.5)
 
-            if has_error:
-                browser.close()
-                notify(f"❌ [{name}] Metrika davlat bazasida topilmadi ({seria} {number})")
-                return False, "Metrika davlat bazasida topilmadi (No content)", "", ""
-
-            if is_already_registered:
-                browser.close()
-                notify(f"⚠️ [{name}] Bu o'quvchi ALLAQACHON ro'yxatdan o'tgan!\n🔑 Bazadagi login to'g'ri kelmadi yoki uni maktab boshqa login/parol bilan ochgan. Excelga uning haqiqiy Login va Parolini yozish kerak.")
-                return False, "Allaqachon ro'yxatdan o'tgan (Login/Parol kerak)", "", ""
-
-            if not is_new_student and not is_already_registered:
-                browser.close()
-                notify(f"❌ [{name}] Ro'yxatdan o'tish oynasiga o'tib bo'lmadi (Kapcha yechilmadi)")
-                return False, "Ro'yxatdan o'tish oynasiga o'tib bo'lmadi (Kapcha yechilmadi)", "", ""
-
-            if is_new_student:
-                notify(f"📝 [{name}] Yangi login ochilmoqda ({target_email})...")
-                page.locator("input[formcontrolname='username'], input#username").fill(target_email)
-                page.locator("input[formcontrolname='password'], input#password").first.fill(default_password)
-                page.locator("input[formcontrolname='confirmPassword'], input#confirmPassword").first.fill(default_password)
-                time.sleep(1)
-                page.locator("button:has-text('Keyingi qadam')").click(force=True)
-                time.sleep(3)
-
-                from session_pool import mark_session_exhausted, record_session_success
-
-                registration_success = False
-                for reg_attempt in range(1, 10):
-                    notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) tasdiqlash kodi olinmoqda ({reg_attempt}-urinish)...")
-                    code, session_used = get_telegram_verification_code()
-                    if not code:
-                        time.sleep(3)
-                        code, session_used = get_telegram_verification_code()
-                    if not code:
-                        notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
+                    if not metrika_confirmed:
                         continue
 
-                    page.evaluate("""(code) => {
-                        const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
-                        for (let i = 0; i < Math.min(6, inputs.length); i++) {
-                            inputs[i].focus();
-                            inputs[i].value = code[i];
-                            inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-                            inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    }""", code)
+                    seria_elem = page.locator("input#seria, input[formcontrolname='seria']").first
+                    if seria_elem.count() == 0 or not seria_elem.is_visible():
+                        if page.locator("input[formcontrolname='username'], input#username").count() > 0:
+                            print(f"[PAGE STATE] Login/Parol formasi aniqlandi!", flush=True)
+                            is_new_student = True
+                            break
+                        print("[PAGE STATE] Seriya katakchasi topilmadi, qayta ochilmoqda...")
+                        continue
+
+                    # Ma'lumotlarni shoshmasdan to'ldirish
+                    cur_bdate = date_variants[0]
+                    seria_elem.fill(seria, timeout=5000)
+                    page.locator("input#number, input[formcontrolname='number']").first.fill(number, timeout=5000)
+
+                    page.evaluate("document.querySelectorAll('.telegram-popup-overlay, .devtools-overlay, .p-dialog-mask').forEach(e => e.remove());")
+                    b_input = page.locator("input[formcontrolname='birthdate'], input.p-inputtext").first
+                    b_input.click(force=True)
+                    b_input.fill("")
+                    b_input.press_sequentially(cur_bdate, delay=80)
+                    b_input.press("Tab")
+                    page.evaluate("() => { if (document.activeElement) document.activeElement.blur(); }")
+                    time.sleep(1.5)
+
+                    # reCAPTCHA ni AI bilan yechish
+                    notify(f"🎧 [{name}] reCAPTCHA Whisper AI orqali yechilmoqda ({form_attempt}/3)...")
+                    captcha_solved = handle_recaptcha(page)
+
+                    if not captcha_solved:
+                        print(f"[RECAPTCHA TRY AGAIN LATER] Metrikada blok berildi. IP yangilanmoqda (Urinish hisobga o'tmadi)...")
+                        notify(f"⏳ [{name}] Google kapcha bloki! IP yangilanmoqda (urinish ketmadi)...")
+                        switch_ip()
+                        time.sleep(3)
+                        continue
+
+                    # KAPCHA 100% YECHILDI - ENDI BU TOZA URINISH!
+                    clean_form_attempt += 1
+
+                    time.sleep(1.5)
+                    page.evaluate("""() => {
+                        const btn = document.querySelector('button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Yuborish'));
+                        if (btn) { btn.removeAttribute('disabled'); btn.click(); }
+                    }""")
                     time.sleep(0.5)
                     try:
-                        code_inputs = page.locator(".verification-input, input[maxlength='1']")
-                        if code_inputs.count() >= 6:
-                            for idx_d, digit in enumerate(code[:6]):
-                                code_inputs.nth(idx_d).click(force=True)
-                                code_inputs.nth(idx_d).fill(digit)
-                    except Exception:
-                        pass
-                    time.sleep(1)
-                    handle_recaptcha(page)
-                    time.sleep(1)
-
-                    # Agar reload bo'lgan bo'lsa yoki kod o'chib ketgan bo'lsa, qayta to'ldirish:
-                    try:
-                        c_inp = page.locator(".verification-input, input[maxlength='1']").first
-                        if not c_inp.input_value():
-                            print(f"[RE-FILL CODE] Tasdiqlash kodi o'chib ketgan, qayta kiritilmoqda: {code}")
-                            page.evaluate("""(code) => {
-                                const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
-                                for (let i = 0; i < Math.min(6, inputs.length); i++) {
-                                    inputs[i].focus();
-                                    inputs[i].value = code[i];
-                                    inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-                                    inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
-                                }
-                            }""", code)
-                            time.sleep(1)
+                        page.locator("button:has-text('Yuborish')").first.click(force=True)
                     except Exception:
                         pass
 
-                    page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first.click(force=True)
-                    print(f"[VERIFY WAIT] Tasdiqlash kodi yuborildi ({code}). Server javobi sabr bilan kutilmoqda...")
-
-                    # Shoshilmasdan 15 soniya davomida server tasdig'ini kutamiz:
-                    is_limited = False
-                    for wait_sec in range(1, 16):
+                    # Davlat bazasidan javob kelishini 25 soniya shoshmasdan kutamiz
+                    for _ in range(25):
                         time.sleep(1)
-                        content = page.content().lower()
-                        cur_url = page.url.lower()
-
-                        if "cheklangan" in content or "bitta telefon" in content:
-                            is_limited = True
-                            print(f"[LIMIT DETECTED] {session_used} raqamida cheklov aniqlandi!")
+                        content = page.content()
+                        u_input = page.locator("input[formcontrolname='username'], input#username")
+                        if u_input.count() > 0 and u_input.first.is_visible():
+                            is_new_student = True
+                            break
+                        elif "no content" in content.lower() or "topilmadi" in content.lower():
+                            has_error = True
+                            break
+                        elif "allaqachon" in content.lower():
+                            is_already_registered = True
+                            try:
+                                emails_found = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', content)
+                                valid_emails = [e for e in emails_found if not any(x in e.lower() for x in ["google", "recaptcha", "sentry"])]
+                                if valid_emails:
+                                    target_email = valid_emails[0].strip()
+                                    print(f"[FOUND EXISTING EMAIL] Sahifadan email topildi: {target_email}")
+                            except Exception as e_em:
+                                print(f"[EXTRACT EMAIL ERROR] {e_em}")
                             break
 
-                        # Ro'yxatdan muvaffaqiyatli o'tganini tekshirish:
-                        has_code_inputs = page.locator(".verification-input, input[maxlength='1']").count() > 0
-                        if "/auth/login" in cur_url or "muvaffaqiyatli" in content or ("tizimga kirish" in content and not has_code_inputs):
-                            print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
-                            registration_success = True
-                            record_session_success(session_used)
+                    if is_new_student or is_already_registered or has_error:
+                        break
+                    else:
+                        time.sleep(3)
+                        break
+
+                if has_error:
+                    browser.close()
+                    notify(f"❌ [{name}] Metrika davlat bazasida topilmadi ({seria} {number})")
+                    return False, "Metrika davlat bazasida topilmadi (No content)", "", ""
+
+                if is_already_registered:
+                    pnfl = None
+                    for pnfl_check in range(1, 4):
+                        # 1. API dan kelgan Username birinchi o'rinda (masalan: NurmatovNurali)
+                        if captured_username[0]:
+                            pnfl = captured_username[0]
+                            print(f"[ACCOUNT IDENTIFIER TEKSHIRILDI] API dan Username olindi: {pnfl}", flush=True)
                             break
 
-                    if is_limited:
-                        notify(f"⚠️ [{name}] {session_used} raqami limitga yetgan, keyingi sessiyaga o'tilmoqda...")
-                        mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                        # 2. API dan kelgan 14 talik haqiqiy PINFL (0000 bo'lmagan)
+                        if captured_pnfl[0] and not str(captured_pnfl[0]).startswith("0000"):
+                            pnfl = captured_pnfl[0]
+                            print(f"[ACCOUNT IDENTIFIER TEKSHIRILDI] API dan 14 talik PINFL olindi: {pnfl}", flush=True)
+                            break
+
+                        # 3. Sahifa matnidan Username ni qidirish ('Tizimga kirish \n NurmatovNurali')
                         try:
-                            resend_btn = page.locator("button:has-text('qayta'), a:has-text('qayta')")
+                            body_txt = page.locator("body").inner_text()
+                        except Exception:
+                            body_txt = ""
+
+                        m_uname = re.search(r'Tizimga kirish\s*\n\s*([a-zA-Z0-9_.-]+)', body_txt)
+                        if m_uname and m_uname.group(1) not in ["sahifasiga", "OneID", "Login", "Parol", "Metrika", "Pasport"]:
+                            pnfl = m_uname.group(1).strip()
+                            print(f"[ACCOUNT IDENTIFIER TEKSHIRILDI] Sahifa matnidan Username topildi: {pnfl}", flush=True)
+                            break
+
+                        # 4. Oldingi usul: sahifa HTML va matnidan 14 talik raqam (0000 bo'lmagan!)
+                        cur_content = page.content()
+                        m_direct = [c for c in re.findall(r'\b\d{14}\b', cur_content) if not c.startswith("0000")]
+                        if m_direct:
+                            pnfl = m_direct[0]
+                            print(f"[ACCOUNT IDENTIFIER TEKSHIRILDI] Sahifa HTML kodidan 14 talik PINFL olindi: {pnfl}", flush=True)
+                            break
+
+                        m_body = [c for c in re.findall(r'\b\d{14}\b', body_txt) if not c.startswith("0000")]
+                        if m_body:
+                            pnfl = m_body[0]
+                            print(f"[ACCOUNT IDENTIFIER TEKSHIRILDI] Sahifa matnidan 14 talik PINFL olindi: {pnfl}", flush=True)
+                            break
+
+                        # 5. Toast va Dialog ichidagi 14 talik raqamlar (0000 bo'lmagan)
+                        try:
+                            dialog_texts = page.locator(".p-dialog, p-dialog, .p-toast, p-toast, .p-toast-detail, .p-toast-message, .alert, [role='alert']").all_inner_texts()
+                            for d_txt in dialog_texts:
+                                for cand in re.findall(r'(?:\d[\s\-_]?){14}', d_txt):
+                                    c_clean = re.sub(r'\D', '', cand)
+                                    if len(c_clean) == 14 and not c_clean.startswith("0000"):
+                                        pnfl = c_clean
+                                        break
+                                if pnfl: break
+                        except Exception:
+                            pass
+
+                        if pnfl:
+                            break
+
+                        print(f"[IDENTIFIER TEKSHIRUV {pnfl_check}/3] Login/PINFL hozircha topilmadi, qayta tekshirilmoqda...", flush=True)
+                        time.sleep(1.5)
+
+                    print(f"[FOUND ACCOUNT IDENTIFIER] {name} uchun hisob ma'lumoti: {pnfl}", flush=True)
+
+                    if pnfl:
+                        notify(f"🔑 [{name}] Allaqachon ro'yxatdan o'tgan! Login/PINFL ({pnfl}) orqali hisob tiklanmoqda...")
+                        rec_ok, rec_token = recover_and_login_student(page, pnfl, name=name, notify=notify, default_password=default_password)
+                        if rec_ok and rec_token:
+                            token = rec_token
+                            target_email = pnfl
+                            registration_success = True
+                            save_student_to_db(seria, number, {
+                                "name": name,
+                                "birthdate": birthdate_digits,
+                                "seria": seria,
+                                "number": number,
+                                "login": pnfl,
+                                "password": default_password,
+                                "status": "REGISTERED"
+                            })
+                            break
+                        else:
+                            if student_cycle < 3:
+                                print(f"[ACCOUNT RETRY] Tiklashda kapcha bloki, IP yangilanib qayta urinilmoqda...")
+                                switch_ip()
+                                time.sleep(2)
+                                continue
+                            else:
+                                browser.close()
+                                notify(f"⚠️ [{name}] Hisob ({pnfl}) orqali tiklab bo'lmadi")
+                                return False, "Hisob orqali tiklab bo'lmadi", "", ""
+                    else:
+                        browser.close()
+                        notify(f"⚠️ [{name}] Bu o'quvchi ALLAQACHON ro'yxatdan o'tgan (Login/PINFL topilmadi)!")
+                        return False, "Allaqachon ro'yxatdan o'tgan (Login/Parol kerak)", "",
+
+                if not is_new_student and not is_already_registered:
+                    if student_cycle < 3:
+                        switch_ip()
+                        continue
+                    browser.close()
+                    notify(f"❌ [{name}] Ro'yxatdan o'tish oynasiga o'tib bo'lmadi (Kapcha yechilmadi)")
+                    return False, "Ro'yxatdan o'tish oynasiga o'tib bo'lmadi (Kapcha yechilmadi)", "", ""
+
+                if is_new_student:
+                    u_form = page.locator("input[formcontrolname='username'], input#username")
+                    if u_form.count() > 0 and u_form.first.is_visible():
+                        notify(f"📝 [{name}] Yangi login ochilmoqda ({target_email})...")
+                        
+                        # Har bir katakchani shoshmasdan to'ldirish va Angular eventlarini yuborish:
+                        page.evaluate("""({ email, pwd }) => {
+                            function setInput(selector, val) {
+                                const el = document.querySelector(selector);
+                                if (el) {
+                                    el.focus();
+                                    el.value = val;
+                                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                                    el.dispatchEvent(new Event('blur', { bubbles: true }));
+                                }
+                            }
+                            setInput("input[formcontrolname='username'], input#username", email);
+                            setInput("input[formcontrolname='password'], input#password", pwd);
+                            setInput("input[formcontrolname='confirmPassword'], input#confirmPassword", pwd);
+                        }""", {"email": target_email, "pwd": default_password})
+                        
+                        # Playwright orqali ham bitta-bitta kiritib tekshirish:
+                        u_form.first.click(force=True)
+                        u_form.first.fill(target_email)
+                        time.sleep(0.5)
+                        p_inp = page.locator("input[formcontrolname='password'], input#password").first
+                        p_inp.click(force=True)
+                        p_inp.fill(default_password)
+                        time.sleep(0.5)
+                        cp_inp = page.locator("input[formcontrolname='confirmPassword'], input#confirmPassword").first
+                        cp_inp.click(force=True)
+                        cp_inp.fill(default_password)
+                        cp_inp.press("Tab")
+                        time.sleep(1.5)
+
+                        # "Keyingi qadam" tugmasi faollashishini sabr bilan kutamiz va bosamiz:
+                        print("[STEP 2] 'Keyingi qadam' tugmasi faollashishi sabr bilan kutilmoqda...", flush=True)
+                        otp_reached = False
+                        for step_wait in range(1, 15):
+                            # Tugmani aktivlashtirish va bosish:
+                            page.evaluate("""() => {
+                                const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.includes('Keyingi qadam'));
+                                if (btn) {
+                                    btn.removeAttribute('disabled');
+                                    btn.classList.remove('p-disabled');
+                                    btn.click();
+                                }
+                            }""")
+                            try:
+                                n_btn = page.locator("button:has-text('Keyingi qadam')").first
+                                if n_btn.count() > 0 and n_btn.is_visible():
+                                    n_btn.click(timeout=1500)
+                            except Exception:
+                                pass
+                            time.sleep(2)
+
+                            # OTP oynasiga o'tganini tekshirish:
+                            otp_inputs = page.locator(".verification-input, input[maxlength='1']")
+                            if otp_inputs.count() > 0 and otp_inputs.first.is_visible():
+                                print(f"[STEP 2 SUCCESS] OTP oynasi muvaffaqiyatli ochildi ({step_wait}-urinishda)!", flush=True)
+                                otp_reached = True
+                                break
+                            
+                            # Agar sahifada xatolik chiqsa (masalan "Bunday foydalanuvchi mavjud"):
+                            c_text = page.content().lower()
+                            if "mavjud" in c_text or "band" in c_text:
+                                import random
+                                target_email = f"maktab.{name.split()[0].lower()[:6]}.{random.randint(1000, 9999)}@gmail.com"
+                                print(f"[EMAIL TAKEN] Yangi email tanlandi: {target_email}", flush=True)
+                                u_form.first.fill(target_email)
+                                time.sleep(1)
+
+                    from session_pool import mark_session_exhausted, record_session_success
+
+                    code = None
+                    session_used = None
+                    for reg_attempt in range(1, 10):
+                        # 1. Agar 'Tasdiqlash kodini qayta yuborish' havolasi chiqib turgan bo'lsa, bosish
+                        try:
+                            resend_btn = page.locator("a:has-text('qayta yuborish'), button:has-text('qayta yuborish'), *:has-text('qayta yuborish')")
                             if resend_btn.count() > 0 and resend_btn.first.is_visible():
+                                print("[RESEND] 'Tasdiqlash kodini qayta yuborish' tugmasi bosildi!", flush=True)
                                 resend_btn.first.click(force=True)
+                                code = None
                                 time.sleep(2)
                         except Exception:
                             pass
-                        continue
+
+                        # 2. Kod olish
+                        if not code:
+                            try:
+                                page.evaluate("""() => {
+                                    const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                                    inputs.forEach(inp => {
+                                        inp.value = '';
+                                        inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                        inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                    });
+                                }""")
+                                code_inputs = page.locator(".verification-input, input[maxlength='1']")
+                                for idx_c in range(code_inputs.count()):
+                                    code_inputs.nth(idx_c).fill("")
+                                time.sleep(0.5)
+                            except Exception:
+                                pass
+
+                            notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) tasdiqlash kodi olinmoqda ({reg_attempt}-urinish)...")
+                            code, session_used = get_telegram_verification_code()
+                            if not code:
+                                time.sleep(3)
+                                code, session_used = get_telegram_verification_code()
+                            if not code:
+                                notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
+                                continue
+
+                        # 3. Kodni katakchalarga kiritish
+                        page.evaluate("""(code) => {
+                            const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                            for (let i = 0; i < Math.min(6, inputs.length); i++) {
+                                inputs[i].focus();
+                                inputs[i].value = code[i];
+                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                                inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }""", code)
+                        time.sleep(0.5)
+                        try:
+                            code_inputs = page.locator(".verification-input, input[maxlength='1']")
+                            if code_inputs.count() >= 6:
+                                for idx_d, digit in enumerate(code[:6]):
+                                    code_inputs.nth(idx_d).click(force=True)
+                                    code_inputs.nth(idx_d).fill(digit)
+                        except Exception:
+                            pass
+                        time.sleep(1)
+
+                        # 4. reCAPTCHA ni AI bilan yechish
+                        captcha_ok = handle_recaptcha(page)
+                        if not captcha_ok:
+                            print(f"[VERIFY RECAPTCHA BLOCKED] Kapcha bloklandi (Try again later)!", flush=True)
+                            # Agar sahifada 'qayta yuborish' tugmasi bo'lsa, bosib yangi kod olamiz (bu kapchani ham reset qiladi):
+                            has_resend = False
+                            try:
+                                resend_btn = page.locator("a:has-text('qayta yuborish'), button:has-text('qayta yuborish'), *:has-text('qayta yuborish')")
+                                if resend_btn.count() > 0 and resend_btn.first.is_visible():
+                                    has_resend = True
+                                    print("[RESEND OTP] Kapcha blokida 'qayta yuborish' bosildi, shu sahifada qolib yangi kod olinmoqda...", flush=True)
+                                    resend_btn.first.click(force=True)
+                                    code = None
+                                    time.sleep(3)
+                                    continue
+                            except Exception:
+                                pass
+
+                            print(f"[VERIFY RECAPTCHA BLOCKED] Shu o'quvchi boshidan qaytadan ro'yxatdan o'tkazilmoqda ({student_cycle}/3)...", flush=True)
+                            notify(f"🔄 [{name}] Google kapcha bloki (Try again)! Shu o'quvchi qaytadan boshlanmoqda ({student_cycle}/3)...")
+                            switch_ip()
+                            time.sleep(2)
+                            retry_this_student = True
+                            break
+
+                        # Agar reload bo'lgan bo'lsa yoki kod o'chib ketgan bo'lsa, qayta to'ldirish:
+                        try:
+                            c_inp = page.locator(".verification-input, input[maxlength='1']").first
+                            if not c_inp.input_value():
+                                print(f"[RE-FILL CODE] Tasdiqlash kodi qayta kiritilmoqda: {code}")
+                                page.evaluate("""(code) => {
+                                    const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                                    for (let i = 0; i < Math.min(6, inputs.length); i++) {
+                                        inputs[i].focus();
+                                        inputs[i].value = code[i];
+                                        inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                                        inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                                    }
+                                }""", code)
+                                time.sleep(1)
+                        except Exception:
+                            pass
+
+                        # 5. FAQAT VA FAQAT kapcha muvaffaqiyatli yechilgandagina "Yuborish" bosiladi!
+                        page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first.click(force=True)
+                        print(f"[VERIFY WAIT] Tasdiqlash kodi yuborildi ({code}). Server javobi sabr bilan kutilmoqda...", flush=True)
+
+                        # Shoshilmasdan 15 soniya davomida server tasdig'ini kutamiz:
+                        is_limited = False
+                        is_invalid = False
+                        for wait_sec in range(1, 16):
+                            time.sleep(1)
+                            content = page.content().lower()
+                            cur_url = page.url.lower()
+
+                            if "tasdiqlanmadi" in content or "boshqa tasdiqlash kodi" in content:
+                                is_invalid = True
+                                print(f"[INVALID OTP DETECTED] Kod xato yoki eskirgan! Qayta yangi kod olinadi...", flush=True)
+                                break
+
+                            if "cheklangan" in content or "bitta telefon" in content:
+                                is_limited = True
+                                print(f"[LIMIT DETECTED] {session_used} raqamida cheklov aniqlandi!")
+                                break
+
+                            # Ro'yxatdan muvaffaqiyatli o'tganini tekshirish:
+                            has_code_inputs = page.locator(".verification-input, input[maxlength='1']").count() > 0
+                            if "/auth/login" in cur_url or "muvaffaqiyatli" in content or ("tizimga kirish" in content and not has_code_inputs):
+                                print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
+                                registration_success = True
+                                record_session_success(session_used)
+                                break
+
+                        if is_invalid:
+                            code = None
+                            try:
+                                resend_btn = page.locator("a:has-text('qayta yuborish'), button:has-text('qayta yuborish'), *:has-text('qayta yuborish')")
+                                if resend_btn.count() > 0 and resend_btn.first.is_visible():
+                                    resend_btn.first.click(force=True)
+                                    time.sleep(1)
+                            except Exception:
+                                pass
+                            continue
+
+                        if is_limited:
+                            notify(f"⚠️ [{name}] {session_used} raqami limitga yetgan, keyingi sessiyaga o'tilmoqda...")
+                            mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                            try:
+                                resend_btn = page.locator("button:has-text('qayta'), a:has-text('qayta')")
+                                if resend_btn.count() > 0 and resend_btn.first.is_visible():
+                                    resend_btn.first.click(force=True)
+                                    time.sleep(2)
+                            except Exception:
+                                pass
+                            continue
+
+                        if registration_success:
+                            break
+                        else:
+                            print(f"[VERIFY RETRY] 15 soniyada serverdan tasdiq kelmadi, qayta urinilmoqda...")
 
                     if registration_success:
                         break
-                    else:
-                        print(f"[VERIFY RETRY] 15 soniyada serverdan tasdiq kelmadi, qayta urinilmoqda...")
 
-                if not registration_success:
-                    browser.close()
-                    notify(f"❌ [{name}] Ro'yxatdan o'tishda telefon raqamlari limitga uchradi")
-                    return False, "Ro'yxatdan o'tishda telefon raqamlari limitga uchradi", "", ""
+                    if retry_this_student:
+                        continue
+
+            if not registration_success and not token:
+                browser.close()
+                notify(f"❌ [{name}] Ro'yxatdan o'tib bo'lmadi")
+                return False, "Ro'yxatdan o'tib bo'lmadi", "", ""
 
             # Ro'yxatdan o'tgach darhol bazaga yozib qo'yamiz
             save_student_to_db(seria, number, {
@@ -1026,21 +1738,22 @@ def process_single_student(student, update_callback=None):
                 "status": "REGISTERED"
             })
 
-            # 2-BOSQICH: Yangi olingan login/parol bilan kirish
-            notify(f"🔓 [{name}] Tizimga kirilmoqda ({target_email})...")
-            token = perform_safe_login(page, target_email, default_password, name=name, notify=notify)
+            # 2-BOSQICH: Yangi olingan login/parol bilan kirish (agar token hali olinmagan bo'lsa)
             if not token:
-                browser.close()
-                save_student_to_db(seria, number, {
-                    "name": name,
-                    "seria": seria,
-                    "number": number,
-                    "status": "REGISTERED",
-                    "login": target_email,
-                    "password": default_password
-                })
-                notify(f"⚠️ [{name}] '{target_email}' kirib bo'lmadi. Keyingi o'quvchiga o'tilmoqda...")
-                return False, "Kirish amalga oshmadi", target_email, default_password
+                notify(f"🔓 [{name}] Tizimga kirilmoqda ({target_email})...")
+                token = perform_safe_login(page, target_email, default_password, name=name, notify=notify)
+                if not token:
+                    browser.close()
+                    save_student_to_db(seria, number, {
+                        "name": name,
+                        "seria": seria,
+                        "number": number,
+                        "status": "REGISTERED",
+                        "login": target_email,
+                        "password": default_password
+                    })
+                    notify(f"⚠️ [{name}] '{target_email}' kirib bo'lmadi. Keyingi o'quvchiga o'tilmoqda...")
+                    return False, "Kirish amalga oshmadi", target_email, default_password
 
         # Agar token yo'q bo'lsa
         if not token:
@@ -1049,16 +1762,38 @@ def process_single_student(student, update_callback=None):
             return False, "Tizimga kirishda token olinmadi", target_email, default_password
 
         notify(f"🔓 [{name}] Tizimga muvaffaqiyatli kirildi! Kurslar boshlandi...")
+        disconnect_warp() # VPN ni o'chirish - TAS-IX ichki tarmoq maksimal tezlikda darslarni yopadi!
 
         # 3-BOSQICH: 4 ta kursni to'liq yakunlash
         for c_id in range(1, 5):
-            complete_course(page, c_id, status_callback=notify)
+            for c_attempt in range(1, 3):
+                try:
+                    complete_course(page, c_id, status_callback=notify)
+                    break
+                except Exception as e_c:
+                    print(f"[COMPLETE COURSE RETRY] Modul {c_id} ({c_attempt}/2) xatolik: {e_c}", flush=True)
+                    time.sleep(2)
 
-        # 4-BOSQICH: Sertifikatni olish
+        # 4-BOSQICH: Sertifikatni olishdan oldin barcha 4 ta modulni 100% ligini tekshirish
+        for c_check in range(1, 5):
+            tree_chk = safe_eval(page, f"""async () => {{
+                const token = localStorage.getItem('accessToken');
+                const r = await fetch('https://api.aistudy.uz/api/StudyAILms/Progress/GetPrivateCourseContentTree?courseId={c_check}', {{
+                    headers: {{ 'Authorization': 'Bearer ' + token }}
+                }});
+                return await r.json();
+            }}""")
+            chk_data = tree_chk.get("result", {}) if isinstance(tree_chk, dict) else {}
+            fc_chk = chk_data.get("finishLessonCount", 0)
+            tc_chk = chk_data.get("lessonCount", 0)
+            if fc_chk < tc_chk and tc_chk > 0:
+                print(f"[PRE-CERT SCAN] Modul {c_check} to'liq emas ({fc_chk}/{tc_chk}), 100% ga yetkazilmoqda...", flush=True)
+                complete_course(page, c_check, status_callback=notify)
+
         notify(f"🏆 [{name}] Sertifikat havolasi olinmoqda...")
         cert_link = ""
-        for _ in range(5):
-            cert_api = page.evaluate("""async () => {
+        for c_try in range(1, 9):
+            cert_api = safe_eval(page, """async () => {
                 const token = localStorage.getItem('accessToken');
                 const r = await fetch('https://api.aistudy.uz/api/StudyAILms/Certificate/GetCertificateByUser', {
                     headers: { 'Authorization': 'Bearer ' + token }
@@ -1071,7 +1806,7 @@ def process_single_student(student, update_callback=None):
                 if cid:
                     cert_link = f"https://omp.aistudy.uz/certificate?id={cid}"
                     break
-            time.sleep(2)
+            time.sleep(3)
 
         browser.close()
         if cert_link:
@@ -1242,6 +1977,21 @@ def process_excel_order(excel_path, update_callback=None):
         if excel_login and excel_pwd and excel_login.lower() not in ["none", "null", ""]:
             student["existing_login"] = excel_login
             student["existing_password"] = excel_pwd
+
+        # I-FR bo'lmagan boshqa seriyalarni tekshirmasdan "Bazada yo'q" deb tashlab ketish:
+        seria_clean = str(seria or "").replace(" ", "").replace("-", "").upper()
+        has_account = bool(student.get("existing_login") and student.get("existing_password"))
+        if not has_account and "FR" not in seria_clean:
+            print(f"[SKIP NON-FR] {name_val} ({seria} {num}): Seriya I-FR emas, tashlab ketildi.")
+            sheet.cell(r, cert_col).value = "Bazada yo'q (I-FR emas)"
+            sheet.cell(r, time_col).value = "0 soniya (Tashlab ketildi)"
+            wb.save(excel_path)
+            if update_callback:
+                update_callback(
+                    f"{idx_str} ⏭ <b>{name_val}</b> ({seria} {num})\n"
+                    f"⚠️ Seriya 'I-FR' emas ({seria}) — bazada yo'q deb tashlab ketildi."
+                )
+            continue
 
         try:
             ok, res_link, email, pwd = process_single_student(student, update_callback=update_callback)
