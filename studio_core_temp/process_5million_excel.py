@@ -612,23 +612,27 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
             }""")
             time.sleep(1.5)
 
-            # 3. 'Parolni tiklash so‘rovini yuborish' tugmasini bosish
-            print(f"[RECOVERY CLICK] 'So‘rovini yuborish' tugmasi bosilmoqda...", flush=True)
+            # 3. 'Parol tiklash so‘rovini yuborish' tugmasini bosish (Faqat submit tugmasi, qaytish tugmasi emas!)
+            print(f"[RECOVERY CLICK] 'Parol tiklash so‘rovini yuborish' (button[type='submit']) bosilmoqda...", flush=True)
             page.evaluate("""() => {
-                const btns = Array.from(document.querySelectorAll('button'));
-                const btn = btns.find(b => b.textContent && (b.textContent.includes('so‘rovini yuborish') || b.textContent.includes('so\'rovini yuborish') || b.textContent.includes('tiklash') || b.textContent.includes('Yuborish')));
+                const btn = document.querySelector("form button[type='submit'], button[type='submit']");
                 if (btn) {
                     btn.removeAttribute('disabled');
                     btn.click();
                 }
             }""")
-            time.sleep(1)
-            sub_btn = page.locator("button:has-text('so‘rovini yuborish'), button:has-text('so\'rovini yuborish'), button:has-text('tiklash'), button:has-text('Yuborish'), button[type='submit']").first
+            time.sleep(0.5)
+            sub_btn = page.locator("form button[type='submit'], button[type='submit']").first
             if sub_btn.count() > 0:
                 try:
                     sub_btn.click(force=True)
                 except Exception:
                     pass
+            # Shuningdek, inputda Enter bosish
+            try:
+                u_input.press("Enter")
+            except Exception:
+                pass
 
             # 4. Sayt sekin yuklanishi mumkin - shoshmasdan 15 soniya davomida javob kelishini kutamiz
             print(f"[RECOVERY WAIT] Saytdan javob kelishi kutilmoqda (shoshmasdan 15s)...", flush=True)
