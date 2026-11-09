@@ -567,28 +567,28 @@ def perform_safe_login(page, email, password, name="", notify=None, max_attempts
     return None
 
 def recover_and_login_student(page, pnfl, name="", notify=None, default_password="Dilnuraxon2015"):
-    """PINFL (JSHSHIR) orqali parolni tiklash va tizimga kirish (Allaqachon ro'yxatdan o'tganlar uchun)"""
+    """PINFL/Login orqali parolni tiklash va tizimga kirish (Qat'iy 2 ta toza urinish)"""
     if isinstance(pnfl, dict):
         pnfl = pnfl.get("pnfl") or pnfl.get("jshshir") or pnfl.get("login") or ""
     pnfl = str(pnfl).strip()
-    if "@" in pnfl:
-        print(f"[RECOVERY ERROR] Tiklashda pochta ({pnfl}) kiritilmaydi, faqat 14 talik PINFL kerak!", flush=True)
-        return False, "Tiklashda faqat 14 talik PINFL qabul qilinadi"
 
     clean_rec_attempt = 0
-    max_rec_attempts = 3
+    max_rec_attempts = 2  # Qat'iy 2 ta urinish bilan cheklanadi!
     total_rec_cycles = 0
-    while clean_rec_attempt < max_rec_attempts and total_rec_cycles < 8:
+    last_failed_code = None
+    session_used = None
+
+    while clean_rec_attempt < max_rec_attempts and total_rec_cycles < 5:
         total_rec_cycles += 1
         main_attempt = clean_rec_attempt + 1
         try:
             from session_pool import fetch_code_for_phone_ending, fetch_tg_code_from_pool
-            print(f"\n[RECOVERY START] {name} uchun PINFL={pnfl} orqali tiklash ({main_attempt}/3)...", flush=True)
+            print(f"\n[RECOVERY START] {name} uchun Login={pnfl} orqali tiklash ({main_attempt}/{max_rec_attempts})...", flush=True)
             page.goto("https://omp.aistudy.uz/auth/forgot-password?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
             time.sleep(2.5)
             page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
 
-            # 1. Login - Parol tabini bosish (switch_to_login_tab va Playwright click bilan 100% ishonchli)
+            # 1. Login - Parol tabini bosish
             switch_to_login_tab(page)
             time.sleep(1)
 
@@ -597,19 +597,18 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
             u_input.click(force=True)
             u_input.fill("")
             u_input.fill(str(pnfl).strip())
-            page.evaluate("() => { const el = document.querySelector('input#username, input[formcontrolname=\"username\"]'); if(el) { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }}")
+            page.evaluate("() => { const el = document.querySelector('input#username, input[formcontrolname='username']'); if(el) { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }}")
             time.sleep(1)
 
-            # 3. "Kodni olish" / "Yuborish" tugmasini bosish
+            # 3. 'Kodni olish' / 'Yuborish' tugmasini bosish
             sub_btn = page.locator("button[type='submit'], button:has-text('so‘rovini yuborish'), button:has-text('Kodni olish'), button:has-text('Yuborish')").first
             sub_btn.click(force=True)
             time.sleep(3)
 
             # 4. Sahifadagi xabarni tekshiramiz (telefon raqami oxirgi 4 ta soni)
             page_text = page.locator("body").inner_text()
-            print(f"[RECOVERY PAGE TEXT] {page_text[:200]}...", flush=True)
-
             phone_4 = None
+            import re
             m_ph = re.search(r'998[\*\d\s]*(\d{4})', page_text)
             if m_ph:
                 phone_4 = m_ph.group(1)
@@ -620,29 +619,36 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
                     phone_4 = valid_4[-1]
 
             if phone_4:
-                print(f"[RECOVERY PHONE] Oxirgi 4 ta raqam aniqlandi: {phone_4}", flush=True)
+                print(f"[RECOVERY PHONE] Oxirgi 4 ta raqam: {phone_4}", flush=True)
                 if notify:
                     notify(f"📱 [{name}] Telegram raqami: oxiri {phone_4}. Sessiyadan kod olinmoqda...")
 
-            # 5. Sessiyadan kodni olamiz
+            # 5. Sessiyadan kodni olamiz (Eski rad etilgan kod exclude_code orqali chetlab o'tiladi)
             code = None
-            session_used = None
             if phone_4:
-                code, session_used = fetch_code_for_phone_ending(phone_4)
+                code, session_used = fetch_code_for_phone_ending(phone_4, exclude_code=last_failed_code)
             if not code:
                 code, session_used = fetch_tg_code_from_pool()
 
             if not code:
-                print(f"[RECOVERY FAIL] Telegram sessiyalardan kod kelmadi!", flush=True)
+                print(f"[RECOVERY FAIL] Telegram sessiyalardan yangi kod kelmadi!", flush=True)
                 switch_ip()
                 time.sleep(2)
                 continue
 
-            print(f"[RECOVERY CODE] Kod olindi: {code} (Sessiya: {session_used}). Kiritilmoqda...", flush=True)
+            print(f"[RECOVERY CODE] Yangi kod olindi: {code} (Sessiya: {session_used}). Kiritilmoqda...", flush=True)
             if notify:
-                notify(f"🔐 [{name}] Kod olindi ({code}) [{session_used}]. Kiritilmoqda...")
+                notify(f"🔐 [{name}] Yangi kod olindi ({code}) [{session_used}]. Kiritilmoqda...")
 
-            # 6. Katakchalarga kodni kiritish
+            # 6. Katakchalarga kodni kiritish (Keyboard type bilan to'liq Angular qo'llab-quvvatlanadi)
+            code_inps = page.locator(".verification-input, input[maxlength='1']")
+            if code_inps.count() >= 6:
+                for c_i in range(6):
+                    try:
+                        code_inps.nth(c_i).click(force=True)
+                        code_inps.nth(c_i).fill(code[c_i])
+                    except Exception:
+                        pass
             page.evaluate("""(code) => {
                 const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
                 for (let i = 0; i < Math.min(6, inputs.length); i++) {
@@ -654,16 +660,7 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
             }""", code)
             time.sleep(1)
 
-            code_inps = page.locator(".verification-input, input[maxlength='1']")
-            for c_i in range(min(6, code_inps.count())):
-                try:
-                    code_inps.nth(c_i).fill(code[c_i])
-                except Exception:
-                    pass
-            time.sleep(1)
-
-            # 7. Kodni tasdiqlash uchun "Yuborish" tugmasini bosish
-            print(f"[RECOVERY SUBMIT] Kod yuborilmoqda (Yuborish tugmasi bosildi)...", flush=True)
+            # 7. Kodni tasdiqlash uchun 'Yuborish' tugmasini bosish
             try:
                 page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash'), button[type='submit']").last.click(force=True)
             except Exception:
@@ -693,18 +690,15 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
                 # Kapchani yechish
                 cap_ok = handle_recaptcha(page)
                 if not cap_ok:
-                    print(f"[RECOVERY CAPTCHA BLOCKED] Kapcha bloklandi. Yangi toza IP olinmoqda (Urinish hisobga o'tmadi)...", flush=True)
-                    if notify:
-                        notify(f"🔄 [{name}] Kapcha bloki! Yangi toza IP olinmoqda (urinish ketmadi)...")
+                    print(f"[RECOVERY CAPTCHA BLOCKED] Kapcha bloklandi. (Urinish hisobga o'tmadi)...", flush=True)
                     switch_ip()
-                    time.sleep(3)
-                    continue # Sahifani qaytadan yangi IP bilan ochamiz!
+                    time.sleep(2)
+                    continue
 
-                # KAPCHA 100% YECHILDI - ENDI BU TOZA URINISH!
+                # KAPCHA YECHILDI - TOZA URINISH
                 clean_rec_attempt += 1
 
-                # "Tasdiqlash" / "Saqlash" / "Yuborish" tugmasini bosish
-                print(f"[RECOVERY CONFIRM] Tasdiqlash tugmasi bosilmoqda...", flush=True)
+                # 'Tasdiqlash' / 'Saqlash' / 'Yuborish' tugmasini bosish
                 conf_btn = page.locator("button[type='submit'], button:has-text('Tasdiqlash'), button:has-text('Saqlash'), button:has-text('Yuborish')").first
                 if conf_btn.count() > 0:
                     conf_btn.click(force=True)
@@ -720,7 +714,8 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
                     if notify:
                         notify(f"✅ [{name}] Parol muvaffaqiyatli yangilandi! Tizimga kirilmoqda...")
                 else:
-                    print(f"[RECOVERY RETRY] Parol formasi hali ham ochiq, IP almashtirilib qayta uriniladi...", flush=True)
+                    print(f"[RECOVERY RETRY] Kod rad etildi ({code}), keyingi urinishda aynan yangi kod olinadi...", flush=True)
+                    last_failed_code = code
                     switch_ip()
                     time.sleep(2)
                     continue
@@ -730,13 +725,13 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
             if not token:
                 token = page.evaluate("() => localStorage.getItem('accessToken')")
             if token:
-                return True, token
+                return True, token, session_used
         except Exception as e:
             print(f"[RECOVERY EXCEPTION {main_attempt}] {e}", flush=True)
             switch_ip()
             time.sleep(2)
 
-    return False, None
+    return False, None, None
 
 def safe_eval(page, script, arg=None, retries=5):
     """Execution context destroyed yoki navigatsiyani xavfsiz bartaraf etish"""
@@ -1429,7 +1424,10 @@ def process_single_student(student, update_callback=None):
 
                     if pnfl:
                         notify(f"🔑 [{name}] Allaqachon ro'yxatdan o'tgan! Login/PINFL ({pnfl}) orqali hisob tiklanmoqda...")
-                        rec_ok, rec_token = recover_and_login_student(page, pnfl, name=name, notify=notify, default_password=default_password)
+                        rec_res = recover_and_login_student(page, pnfl, name=name, notify=notify, default_password=default_password)
+                        rec_ok = rec_res[0] if isinstance(rec_res, tuple) and len(rec_res) > 0 else False
+                        rec_token = rec_res[1] if isinstance(rec_res, tuple) and len(rec_res) > 1 else None
+                        rec_session = rec_res[2] if isinstance(rec_res, tuple) and len(rec_res) > 2 else None
                         if rec_ok and rec_token:
                             token = rec_token
                             target_email = pnfl
@@ -1441,6 +1439,7 @@ def process_single_student(student, update_callback=None):
                                 "number": number,
                                 "login": pnfl,
                                 "password": default_password,
+                                "phone": rec_session,
                                 "status": "REGISTERED"
                             })
                             break
