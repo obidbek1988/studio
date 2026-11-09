@@ -189,29 +189,35 @@ async def _fetch_from_one_session(session_name, exclude_code=None):
                         if clicked: break
                 if clicked: break
 
-        # Kodni kutish (Maksimal 25 soniya, chunki @aistudy_uz_bot 15-18 soniyada javob beradi)
-        now_ts = time.time()
-        for wait_s in range(1, 26):
-            await asyncio.sleep(1)
-            latest = await c.get_messages(bot, limit=3)
-            for m in latest:
-                # FAQAT va FAQAT so'nggi 2 daqiqa ichida kelgan yangi xabarlarni olamiz (eski kodlarni olmaslik uchun!)
-                msg_age = time.time() - m.date.timestamp()
-                if msg_age > 120:
-                    continue
+        # Kodni kutish - FAQAT tugma bosilgandan keyin kelgan YANGI xabarni olamiz
+        click_time = time.time()
+        if clicked:
+            await asyncio.sleep(2) # Yangi xabar kelishi uchun 2 soniya kutamiz!
 
+        for wait_s in range(1, 26):
+            latest = await c.get_messages(bot, limit=5)
+            for m in latest:
+                if m.out:
+                    continue # Biz yozgan xabar emas, faqat botdan kelgan javob!
+                
+                # Tugma bosilishidan OLDIN kelgan eski xabarlarni BUTUNLAY inkor qilamiz!
+                if m.date.timestamp() < (click_time - 10):
+                    continue
+                
                 txt = m.text or ""
                 m_code = re.search(r'\b(\d{6})\b', txt)
                 if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
-                    code = m_code.group(1)
-                    if exclude_code and code == str(exclude_code).strip():
-                        # Bu eski/rad etilgan kod, tugmani qayta bosib yangisini kutamiz
-                        continue
+                    new_code = m_code.group(1)
+                    if exclude_code and new_code == str(exclude_code).strip():
+                        continue # Rad etilgan eski kod bo'lsa olmaymiz
+                    
+                    msg_age = int(time.time() - m.date.timestamp())
                     print(f"\n=======================================================", flush=True)
-                    print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod keldi ({int(msg_age)}s oldin):\n{txt.strip()}", flush=True)
+                    print(f"[TG BOT XABAR] ({session_name}) dan YANGI kod keldi ({msg_age}s oldin): [{new_code}]", flush=True)
                     print(f"=======================================================\n", flush=True)
                     await c.disconnect()
-                    return code, "ok"
+                    return new_code, "ok"
+            await asyncio.sleep(1)
 
         await c.disconnect()
         return None, "no_code"
