@@ -286,7 +286,7 @@ async def _fetch_from_one_session(session_name, exclude_code=None):
         except: pass
         return None, f"{type(e).__name__}: {e}"
 
-def fetch_tg_code_from_pool(max_candidates=5):
+def fetch_tg_code_from_pool(max_candidates=5, exclude_code=None):
     candidates = get_candidate_sessions()
     if not candidates:
         print("[SESSION POOL] Faol sessiyalar topilmadi!", flush=True)
@@ -299,8 +299,8 @@ def fetch_tg_code_from_pool(max_candidates=5):
         print(f"[SESSION POOL] Tekshirilmoqda: {s_name}...", flush=True)
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s)), s_name)
-                code, status = fut.result(timeout=48.0)
+                fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s, exclude_code=exclude_code)), s_name)
+                code, status = fut.result(timeout=115.0)
 
             if code:
                 limit_reached, count = record_session_success(s_name, max_limit=8)
@@ -326,7 +326,7 @@ def fetch_tg_code_from_pool(max_candidates=5):
 
     return None, None
 
-def fetch_code_for_phone_ending(last_digits, timeout=30.0, exclude_code=None):
+def fetch_code_for_phone_ending(last_digits, timeout=115.0, exclude_code=None):
     """Oxirgi 4 ta raqam bo'yicha sessiyani topib, undan kod olish (Tiklash uchun)"""
     last_digits = str(last_digits).strip()
     matched_sessions = []
