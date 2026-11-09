@@ -592,38 +592,72 @@ def recover_and_login_student(page, pnfl, name="", notify=None, default_password
             switch_to_login_tab(page)
             time.sleep(1)
 
-            # 2. Login / PINFL ni kiritish
+            clean_rec_attempt += 1  # Urinish hisoblanadi (1/2, 2/2)
+
+            # 2. Login / PINFL ni kiritish (Real klaviatura va Angular hodisalari bilan)
             u_input = page.locator("input#username, input[formcontrolname='username']").first
             u_input.click(force=True)
             u_input.fill("")
-            u_input.fill(str(pnfl).strip())
-            page.evaluate("() => { const el = document.querySelector('input#username, input[formcontrolname='username']'); if(el) { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }}")
+            try:
+                u_input.type(str(pnfl).strip(), delay=40)
+            except Exception:
+                u_input.fill(str(pnfl).strip())
+            page.evaluate("""() => {
+                const el = document.querySelector('input#username, input[formcontrolname="username"]');
+                if (el) {
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.dispatchEvent(new Event('blur', { bubbles: true }));
+                }
+            }""")
+            time.sleep(1.5)
+
+            # 3. 'Parolni tiklash so‘rovini yuborish' tugmasini bosish
+            print(f"[RECOVERY CLICK] 'So‘rovini yuborish' tugmasi bosilmoqda...", flush=True)
+            page.evaluate("""() => {
+                const btns = Array.from(document.querySelectorAll('button'));
+                const btn = btns.find(b => b.textContent && (b.textContent.includes('so‘rovini yuborish') || b.textContent.includes('so\'rovini yuborish') || b.textContent.includes('tiklash') || b.textContent.includes('Yuborish')));
+                if (btn) {
+                    btn.removeAttribute('disabled');
+                    btn.click();
+                }
+            }""")
             time.sleep(1)
+            sub_btn = page.locator("button:has-text('so‘rovini yuborish'), button:has-text('so\'rovini yuborish'), button:has-text('tiklash'), button:has-text('Yuborish'), button[type='submit']").first
+            if sub_btn.count() > 0:
+                try:
+                    sub_btn.click(force=True)
+                except Exception:
+                    pass
 
-            # 3. 'Kodni olish' / 'Yuborish' tugmasini bosish
-            sub_btn = page.locator("button[type='submit'], button:has-text('so‘rovini yuborish'), button:has-text('Kodni olish'), button:has-text('Yuborish')").first
-            sub_btn.click(force=True)
-            time.sleep(3)
-
-            # 4. Sahifadagi xabarni tekshiramiz (telefon raqami oxirgi 4 ta soni)
-            page_text = page.locator("body").inner_text()
+            # 4. Sayt sekin yuklanishi mumkin - shoshmasdan 15 soniya davomida javob kelishini kutamiz
+            print(f"[RECOVERY WAIT] Saytdan javob kelishi kutilmoqda (shoshmasdan 15s)...", flush=True)
             phone_4 = None
             import re
-            m_ph = re.search(r'998[\*\d\s]*(\d{4})', page_text)
-            if m_ph:
-                phone_4 = m_ph.group(1)
-            else:
-                matches = re.findall(r'\b(\d{4})\b', page_text)
-                valid_4 = [m for m in matches if m not in ["2024", "2025", "2026", "2027"]]
-                if valid_4:
-                    phone_4 = valid_4[-1]
+            for wait_step in range(15):
+                time.sleep(1)
+                page_text = page.locator("body").inner_text()
+                
+                m_ph = re.search(r'998[\*\d\s]*(\d{4})', page_text)
+                if m_ph:
+                    phone_4 = m_ph.group(1)
+                    break
+                else:
+                    matches = re.findall(r'\b(\d{4})\b', page_text)
+                    valid_4 = [m for m in matches if m not in ["2024", "2025", "2026", "2027"]]
+                    if valid_4:
+                        phone_4 = valid_4[-1]
+                        break
+                
+                if page.locator(".verification-input, input[maxlength='1']").count() >= 6:
+                    break
 
             if phone_4:
-                print(f"[RECOVERY PHONE] Oxirgi 4 ta raqam: {phone_4}", flush=True)
+                print(f"[RECOVERY PHONE] Oxirgi 4 ta raqam aniqlandi: {phone_4}", flush=True)
                 if notify:
                     notify(f"📱 [{name}] Telegram raqami: oxiri {phone_4}. Sessiyadan kod olinmoqda...")
 
-            # 5. Sessiyadan kodni olamiz (Eski rad etilgan kod exclude_code orqali chetlab o'tiladi)
+# 5. Sessiyadan kodni olamiz (Eski rad etilgan kod exclude_code orqali chetlab o'tiladi)
             code = None
             if phone_4:
                 code, session_used = fetch_code_for_phone_ending(phone_4, exclude_code=last_failed_code)
