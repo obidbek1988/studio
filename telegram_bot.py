@@ -1310,6 +1310,17 @@ class TelegramBotServer:
                 "💾 <b>1-BOSQICH: Barcha yangi sertifikatlar va o'quvchilar bazasi saqlanmoqda (Git Push)...</b>",
                 reply_markup=self.get_reply_keyboard(chat_id)
             )
+            # 1. Direct REST API sync of database and active order before reboot
+            try:
+                import process_5million_excel
+                process_5million_excel.sync_db_to_cloud()
+                if ACTIVE_EXCEL_PATH.exists():
+                    process_5million_excel.sync_active_order_to_cloud(str(ACTIVE_EXCEL_PATH))
+                time.sleep(2)
+                print("[REBOOT AUTO-SAVE] Yangi sertifikatlar va buyurtma API orqali muvaffaqiyatli saqlandi!")
+            except Exception as e_api_push:
+                print(f"[REBOOT API PUSH ERROR] {e_api_push}")
+
             # 1. PUSH latest database and session states to private studio-core
             try:
                 if os.path.exists("core_temp"):
