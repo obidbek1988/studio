@@ -215,12 +215,22 @@ async def _fetch_from_one_session(session_name, exclude_code=None):
                 break
             await asyncio.sleep(1)
 
-        # YANGI QOIDA: Agar kod avvalgi bilan bir xil bo'lsa, qabul qilinmaydi!
-        # Kod olish tugmasini bosib qayta olinadi (3 martagacha urinish).
+        # 1-VARIANT: Agar olingan kod avvalgi bilan bir xil bo'lsa:
+        # Har 10 soniyada 'Qayta olish' tugmasini bosib tekshiramiz.
+        # Kod yangilangani zahoti darhol yangi kodni olamiz!
+        # Mobodo 90 soniyadan keyin ham kod o'zgarmasa, oxirgi harakat sifatida terib ko'radi,
+        # agar baribir bo'lmasa keyingi jarayonga o'tiladi!
         if cand_code and exclude_code and cand_code == str(exclude_code).strip():
-            print(f"[RETRY SAME CODE] Olingan kod avvalgi bilan bir xil ({cand_code})! 3 martagacha qayta bosiladi...", flush=True)
-            for retry_i in range(1, 4):
-                print(f"[RETRY SAME CODE {retry_i}/3] 'Tasdiqlash kodini olish' tugmasi qayta bosilmoqda...", flush=True)
+            print(f"[RETRY SAME CODE] Olingan kod avvalgi bilan bir xil ({cand_code})! Yangi kod kelishi kutilmoqda (maks 90s)...", flush=True)
+            start_wait = time.time()
+            got_new = False
+            check_round = 0
+            while (time.time() - start_wait) < 90:
+                check_round += 1
+                elapsed = int(time.time() - start_wait)
+                print(f"[KOD TEKSHIRUV {check_round}] {elapsed}s o'tdi. 'Qayta olish' tugmasi bosilmoqda...", flush=True)
+                
+                # Tugmani bosish
                 clicked_retry = False
                 msgs_retry = await c.get_messages(bot, limit=5)
                 for mr in msgs_retry:
@@ -228,38 +238,39 @@ async def _fetch_from_one_session(session_name, exclude_code=None):
                         for row in mr.buttons:
                             for b in row:
                                 bt = (b.text or "").lower()
-                                if any(w in bt for w in ["tasdiqlash", "kod", "olish", "code", "qayta"]):
+                                if any(w in bt for w in ["qayta", "tasdiqlash", "kod", "olish", "code", "retry"]):
                                     try:
                                         await b.click()
                                         clicked_retry = True
-                                        await asyncio.sleep(1.0)
-                                        await b.click()
                                         break
                                     except Exception:
                                         pass
                             if clicked_retry: break
                     if clicked_retry: break
                 
-                await asyncio.sleep(2.5)
+                await asyncio.sleep(3.0)
+                
+                # Yangi xabarni tekshirish
                 latest_retry = await c.get_messages(bot, limit=5)
                 for mr in latest_retry:
                     if mr.out: continue
                     txt_r = mr.text or ""
                     m_code_r = re.search(r'\b(\d{6})\b', txt_r)
                     if m_code_r and any(w in txt_r.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
-                        new_cand = m_code_r.group(1)
-                        if new_cand != str(exclude_code).strip():
-                            cand_code = new_cand
-                            print(f"[RETRY SUCCESS] Yangi boshqa kod olindi: {cand_code} (Eski: {exclude_code})", flush=True)
+                        fresh_code = m_code_r.group(1)
+                        if fresh_code != str(exclude_code).strip():
+                            cand_code = fresh_code
+                            got_new = True
+                            print(f"[YANGI KOD KELDI!] {elapsed}s da yangi kod olindi: {cand_code} (Eski: {exclude_code})", flush=True)
                             break
-                if cand_code != str(exclude_code).strip():
+                if got_new:
                     break
-            
-            # Agar 3 marta urinishda ham bir xil kod o'zgarmasa:
-            if cand_code == str(exclude_code).strip():
-                print(f"[SAME CODE FAILED] 3 marta urinishda ham kod yangilanmadi ({cand_code}). Iloji yo'q, keyingi jarayonga o'tiladi!", flush=True)
-                await c.disconnect()
-                return None, "same_code"
+                
+                # Har 10 soniyalik tekshiruv uchun qolgan vaqtni kutish
+                await asyncio.sleep(7.0)
+
+            if not got_new:
+                print(f"[90s O'TDI] 90 soniya ichida kod o'zgarmadi ({cand_code}). Oxirgi harakat sifatida terib ko'riladi...", flush=True)
 
         if cand_code:
             print(f"\n=======================================================", flush=True)
