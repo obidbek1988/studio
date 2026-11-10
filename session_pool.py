@@ -15,6 +15,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 STATE_FILE = os.path.join(BASE_DIR, "session_pool_state.json")
 
+def normalize_session_name(name):
+    """Sessiya nomini tozalab, sof raqamlar ko'rinishiga keltiradi (masalan: +998330497040 -> 998330497040)"""
+    if not name:
+        return ""
+    name = str(name).strip()
+    if name.endswith(".session"):
+        name = name[:-8]
+    digits = re.sub(r'\D', '', name)
+    return digits if digits else name
+
 def load_state():
     if os.path.exists(STATE_FILE):
         try:
@@ -40,43 +50,56 @@ def save_state(state):
 def get_candidate_sessions():
     state = load_state()
     valid = state.get("valid_sessions", [])
-    exhausted = set(state.get("exhausted", []))
-    unauth = set(state.get("unauthorized", []))
-    active = state.get("active_session")
+    raw_exhausted = state.get("exhausted", [])
+    raw_unauth = state.get("unauthorized", [])
+
+    exhausted = {normalize_session_name(x) for x in raw_exhausted if x}
+    unauth = {normalize_session_name(x) for x in raw_unauth if x}
+    active = normalize_session_name(state.get("active_session"))
 
     candidates = []
     if active and active not in exhausted and active not in unauth:
         candidates.append(active)
 
     for s in valid:
-        if s not in exhausted and s not in unauth and s not in candidates:
-            candidates.append(s)
+        clean_s = normalize_session_name(s)
+        if clean_s and clean_s not in exhausted and clean_s not in unauth and clean_s not in candidates:
+            candidates.append(clean_s)
 
     if not candidates and os.path.exists(SESSIONS_DIR):
         for fn in os.listdir(SESSIONS_DIR):
             if fn.endswith(".session"):
                 name = fn[:-8]
-                if name not in exhausted and name not in unauth:
-                    candidates.append(name)
+                clean_n = normalize_session_name(name)
+                if clean_n and clean_n not in exhausted and clean_n not in unauth and clean_n not in candidates:
+                    candidates.append(clean_n)
     return candidates
 
 def mark_session_exhausted(session_name, reason="limit_reached"):
     state = load_state()
-    exhausted = set(state.get("exhausted", []))
-    exhausted.add(session_name)
-    state["exhausted"] = list(exhausted)
-    if state.get("active_session") == session_name:
+    clean = normalize_session_name(session_name)
+    exhausted = {normalize_session_name(x) for x in state.get("exhausted", []) if x}
+    if clean:
+        exhausted.add(clean)
+    state["exhausted"] = sorted(list(exhausted))
+
+    active = normalize_session_name(state.get("active_session"))
+    if not active or active == clean:
         state["active_session"] = None
+
     save_state(state)
-    print(f"[SESSION POOL] Sessiya LIMITGA YETDI: {session_name} ({reason})", flush=True)
+    print(f"[SESSION POOL] Sessiya LIMITGA YETDI: {clean} ({reason}) - Sessiyalar ro'yxatidan butunlay chetlatildi!", flush=True)
 
 def record_session_success(session_name):
     state = load_state()
+    clean = normalize_session_name(session_name)
+    if not clean:
+        clean = str(session_name)
     counts = state.get("success_counts", {})
-    counts[session_name] = counts.get(session_name, 0) + 1
+    counts[clean] = counts.get(clean, 0) + 1
     state["success_counts"] = counts
     save_state(state)
-    print(f"[SESSION POOL] {session_name} orqali ro'yxatdan o'tdi (Jami: {counts[session_name]} ta)", flush=True)
+    print(f"[SESSION POOL] {clean} orqali ro'yxatdan o'tdi (Jami: {counts[clean]} ta)", flush=True)
 
 async def _fetch_from_one_session(session_name):
     session_path = os.path.join(SESSIONS_DIR, session_name)
