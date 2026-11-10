@@ -138,13 +138,20 @@ async def _fetch_from_one_session(session_name):
         # Kontakt ulashish so'ralsa
         needs_contact = False
         for m in msgs:
+            txt = (m.text or "").lower()
+            if any(w in txt for w in ["telefon", "raqam", "kontakt", "share"]):
+                needs_contact = True
+                break
             if m.buttons:
                 for row in m.buttons:
                     for b in row:
                         bt = (b.text or "").lower()
-                        if "raqam" in bt or "telefon" in bt or "share" in bt:
+                        if any(w in bt for w in ["raqam", "telefon", "share", "kontakt"]):
                             needs_contact = True
                             break
+                    if needs_contact: break
+            if needs_contact: break
+
         if needs_contact and me.phone:
             contact = InputMediaContact(phone_number=me.phone, first_name=me.first_name or "User", last_name="", vcard="")
             try:
@@ -214,7 +221,7 @@ def fetch_tg_code_from_pool(max_candidates=5):
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s)), s_name)
-                code, status = fut.result(timeout=30.0)
+                code, status = fut.result(timeout=45.0)
 
             if code:
                 phone_display = status if status and status != "ok" else s_name
