@@ -71,10 +71,8 @@ def get_candidate_sessions():
             if fn.endswith(".session"):
                 name = fn[:-8]
                 clean_n = normalize_session_name(name)
-                # Faqat haqiqiy 998 bilan boshlanadigan 12 xonali sessiyalarni tekshirish (axlat fayllarni tekshirmaslik):
-                if clean_n and len(clean_n) == 12 and clean_n.startswith("998"):
-                    if clean_n not in exhausted and clean_n not in unauth and clean_n not in candidates:
-                        candidates.append(clean_n)
+                if clean_n and clean_n not in exhausted and clean_n not in unauth and clean_n not in candidates:
+                    candidates.append(clean_n)
     return candidates
 
 def mark_session_exhausted(session_name, reason="limit_reached"):
