@@ -257,8 +257,21 @@ def disconnect_warp():
     return True
 
 def switch_ip():
-    """Tizim VPN barqarorligini saqlash - internet uzilmasligi va DNS yo'qolmasligi uchun VPN ga tegilmaydi"""
-    print("[WARP] Aloqa barqaror, 2 soniya kutilmoqda...", flush=True)
+    """Cloudflare WARP orqali toza yangi IP olish (Faqat Google kapcha blok berganda)"""
+    warp_exe = r"C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe"
+    if os.path.exists(warp_exe):
+        for w_try in range(1, 3):
+            try:
+                print(f"[WARP] Google blok tufayli yangi toza IP olinmoqda ({w_try}/2)...", flush=True)
+                subprocess.run([warp_exe, "--accept-tos", "disconnect"], capture_output=True, timeout=8)
+                time.sleep(1)
+                subprocess.run([warp_exe, "--accept-tos", "connect"], capture_output=True, timeout=8)
+                time.sleep(2)
+                print(f"[WARP] Yangi toza IP muvaffaqiyatli ulandi!", flush=True)
+                return True
+            except Exception as ew:
+                print(f"[WARP ERROR] {ew}", flush=True)
+                time.sleep(1)
     time.sleep(2)
     return True
 
@@ -3187,7 +3200,7 @@ def process_excel_order(excel_path, update_callback=None):
         all_records = []
         for r_num in valid_rows:
             fio_val = sh_main.cell(r_num, name_col).value
-            dob_val = sh_main.cell(r_num, dob_col).value
+            dob_val = sh_main.cell(r_num, bdate_col).value
             ser_val = sh_main.cell(r_num, seria_col).value
             num_val = sh_main.cell(r_num, num_col).value
             sinf_val = sh_main.cell(r_num, sinf_col).value
