@@ -492,7 +492,9 @@ def handle_recaptcha(page):
                 try:
                     bcontent = bframe.content()
                     if "Keyinroq" in bcontent or "automated queries" in bcontent or "avtomatik" in bcontent or "try again later" in bcontent.lower():
-                        print("[RECAPTCHA BLOK] Google blok chiqardi (Try again later). Kapcha qayta yuklash tugmasi bosilmoqda...", flush=True)
+                        print("[RECAPTCHA BLOK] Google blok chiqardi (Try again later)! Yangi toza IP olinmoqda...", flush=True)
+                        switch_ip()
+                        time.sleep(2)
                         for r_att in range(1, 4):
                             try:
                                 r_btn = bframe.locator("#recaptcha-reload-button")
@@ -503,7 +505,7 @@ def handle_recaptcha(page):
                                 pass
                             bcontent2 = bframe.content()
                             if not ("automated queries" in bcontent2 or "try again later" in bcontent2.lower()):
-                                print("[RECAPTCHA] Qayta yuklash orqali blok muvaffaqiyatli ketdi!", flush=True)
+                                print("[RECAPTCHA] Yangi toza IP orqali blok muvaffaqiyatli ketdi!", flush=True)
                                 break
                             time.sleep(2)
 
@@ -1566,8 +1568,10 @@ def login_or_register_single_student(student, update_callback=None):
                 has_error = False
                 retry_this_student = False
 
-                # Metrika formasini to'ldirish
-                for form_attempt in range(1, 4):
+                # Metrika formasini to'ldirish (Google kapcha bloki urinishga hisoblanmaydi!)
+                form_attempt = 1
+                captcha_block_count = 0
+                while form_attempt <= 3 and captcha_block_count < 10:
                     notify(f"📝 [{name}] Metrika kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
                     page_loaded = False
                     for g_try in range(1, 4):
@@ -1641,11 +1645,12 @@ def login_or_register_single_student(student, update_callback=None):
                     student_idle_start = time.time()  # Kapchadan keyin taymer yangilanadi
 
                     if not captcha_solved:
-                        print(f"[RECAPTCHA TRY AGAIN LATER] Metrikada blok berildi. IP yangilanmoqda...")
-                        notify(f"⏳ [{name}] Google kapcha bloki! IP yangilanmoqda ({form_attempt}/3)...")
+                        captcha_block_count += 1
+                        print(f"[RECAPTCHA TRY AGAIN LATER] Google kapcha bloki! Bu 3 martalik limitga hisoblanmaydi ({captcha_block_count}). Toza IP olinmoqda...")
+                        notify(f"⏳ [{name}] Google kapcha bloki! Yangi toza IP olinmoqda (Urinish kuymaydi: {form_attempt}/3)...")
                         switch_ip()
                         time.sleep(3)
-                        continue
+                        continue  # E'tibor bering: form_attempt oshmaydi!
 
                     time.sleep(1.5)
                     page.evaluate("""() => {
@@ -1686,6 +1691,7 @@ def login_or_register_single_student(student, update_callback=None):
                     else:
                         print(f"[STEP 1 RETRY] Serverdan javob kelmadi, qayta urinilmoqda ({form_attempt}/3)...", flush=True)
                         notify(f"⏳ [{name}] Server javobi kechikmoqda, qayta urinilmoqda ({form_attempt}/3)...")
+                        form_attempt += 1  # Faqat server javob bermaganda urinish oshadi!
                         time.sleep(2)
                         continue
 
@@ -2281,8 +2287,10 @@ def process_single_student(student, update_callback=None):
                 has_error = False
                 retry_this_student = False
 
-                # Metrika formasini to'ldirish
-                for form_attempt in range(1, 4):
+                # Metrika formasini to'ldirish (Google kapcha bloki urinishga hisoblanmaydi!)
+                form_attempt = 1
+                captcha_block_count = 0
+                while form_attempt <= 3 and captcha_block_count < 10:
                     notify(f"📝 [{name}] Metrika kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
                     page_loaded = False
                     for g_try in range(1, 4):
@@ -2356,11 +2364,12 @@ def process_single_student(student, update_callback=None):
                     student_idle_start = time.time()  # Kapchadan keyin taymer yangilanadi
 
                     if not captcha_solved:
-                        print(f"[RECAPTCHA TRY AGAIN LATER] Metrikada blok berildi. IP yangilanmoqda...")
-                        notify(f"⏳ [{name}] Google kapcha bloki! IP yangilanmoqda ({form_attempt}/3)...")
+                        captcha_block_count += 1
+                        print(f"[RECAPTCHA TRY AGAIN LATER] Google kapcha bloki! Bu 3 martalik limitga hisoblanmaydi ({captcha_block_count}). Toza IP olinmoqda...")
+                        notify(f"⏳ [{name}] Google kapcha bloki! Yangi toza IP olinmoqda (Urinish kuymaydi: {form_attempt}/3)...")
                         switch_ip()
                         time.sleep(3)
-                        continue
+                        continue  # E'tibor bering: form_attempt oshmaydi!
 
                     time.sleep(1.5)
                     page.evaluate("""() => {
@@ -2401,6 +2410,7 @@ def process_single_student(student, update_callback=None):
                     else:
                         print(f"[STEP 1 RETRY] Serverdan javob kelmadi, qayta urinilmoqda ({form_attempt}/3)...", flush=True)
                         notify(f"⏳ [{name}] Server javobi kechikmoqda, qayta urinilmoqda ({form_attempt}/3)...")
+                        form_attempt += 1  # Faqat server javob bermaganda urinish oshadi!
                         time.sleep(2)
                         continue
 
