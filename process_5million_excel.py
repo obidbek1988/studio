@@ -1765,6 +1765,11 @@ def login_or_register_single_student(student, update_callback=None):
                             alt_pwd = f"{name_parts[0]}{birth_year}"
                             if alt_pwd not in candidate_passwords:
                                 candidate_passwords.append(alt_pwd)
+                        # Zaxira yil variantlari
+                        if f"{first_name}2014" not in candidate_passwords:
+                            candidate_passwords.append(f"{first_name}2014")
+                        if f"{first_name}2015" not in candidate_passwords:
+                            candidate_passwords.append(f"{first_name}2015")
                         if "Maktab29" not in candidate_passwords:
                             candidate_passwords.append("Maktab29")
 
