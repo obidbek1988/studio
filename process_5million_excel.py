@@ -616,14 +616,23 @@ def perform_safe_login(page, email, password, name="", notify=None):
             p_inp.fill(password)
             time.sleep(0.5)
 
-            # Anchor katakchani bosib ko'rish
-            for f in page.frames:
-                if "anchor" in f.url:
-                    try:
-                        f.click("#recaptcha-anchor", timeout=2500, force=True)
-                        time.sleep(1.5)
-                    except Exception:
-                        pass
+            if notify:
+                notify(f"🎧 [{name}] reCAPTCHA audio Whisper AI orqali yechilmoqda ({attempt}/2)...")
+
+            # Google reCAPTCHA Whisper AI orqali to'liq yechish
+            c_ok = handle_recaptcha(page)
+            time.sleep(1)
+
+            # Agar reload bo'lgan bo'lsa, inputlarni qayta to'ldiramiz
+            try:
+                cur_u = page.locator("input#username, input[formcontrolname='username']").first.input_value()
+                if not cur_u or cur_u != email:
+                    u2 = page.locator("input#username, input[formcontrolname='username']").first
+                    u2.fill(email)
+                    p2 = page.locator("input#password, input[formcontrolname='password']").first
+                    p2.fill(password)
+            except Exception:
+                pass
 
             # Endi "Tizimga kirish" tugmasini bosamiz
             page.locator("button:has-text('Tizimga kirish')").last.click(force=True)
