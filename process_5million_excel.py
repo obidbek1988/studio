@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "students_db.json"
 db_lock = threading.Lock()
-PARALLEL_WORKERS = 4
+PARALLEL_WORKERS = 10
 excel_lock = threading.Lock()
 
 def normalize_birthdate_for_input(raw_bdate):
