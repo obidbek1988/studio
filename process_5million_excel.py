@@ -3184,182 +3184,185 @@ def process_excel_order(excel_path, update_callback=None):
 
     total_excel_duration = time.time() - excel_start_time
     with excel_lock:
-        wb_final = openpyxl.load_workbook(excel_path)
-        sh_main = wb_final.active
-        sh_main.title = "Barcha o'quvchilar"
+        try:
+            wb_final = openpyxl.load_workbook(excel_path)
+            sh_main = wb_final.active
+            sh_main.title = "Barcha o'quvchilar"
 
-        # Zamonaviy styllar
-        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-        header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
-        success_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-        success_font = Font(name="Segoe UI", size=10, color="276A3C", bold=True)
-        fail_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
-        fail_font = Font(name="Segoe UI", size=10, color="C00000")
-        link_font = Font(name="Segoe UI", size=10, color="0563C1", underline="single", bold=True)
-        data_font = Font(name="Segoe UI", size=10)
-        thin_border = Border(
-            left=Side(style='thin', color='D9D9D9'),
-            right=Side(style='thin', color='D9D9D9'),
-            top=Side(style='thin', color='D9D9D9'),
-            bottom=Side(style='thin', color='D9D9D9')
-        )
-        center_align = Alignment(horizontal="center", vertical="center")
-        left_align = Alignment(horizontal="left", vertical="center")
+            # Zamonaviy styllar
+            header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+            header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+            success_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+            success_font = Font(name="Segoe UI", size=10, color="276A3C", bold=True)
+            fail_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+            fail_font = Font(name="Segoe UI", size=10, color="C00000")
+            link_font = Font(name="Segoe UI", size=10, color="0563C1", underline="single", bold=True)
+            data_font = Font(name="Segoe UI", size=10)
+            thin_border = Border(
+                left=Side(style='thin', color='D9D9D9'),
+                right=Side(style='thin', color='D9D9D9'),
+                top=Side(style='thin', color='D9D9D9'),
+                bottom=Side(style='thin', color='D9D9D9')
+            )
+            center_align = Alignment(horizontal="center", vertical="center")
+            left_align = Alignment(horizontal="left", vertical="center")
 
-        # 1. Barcha o'quvchilar ma'lumotlarini ajratib olamiz
-        all_records = []
-        for r_num in valid_rows:
-            fio_val = sh_main.cell(r_num, name_col).value
-            dob_val = sh_main.cell(r_num, bdate_col).value
-            ser_val = sh_main.cell(r_num, seria_col).value
-            num_val = sh_main.cell(r_num, num_col).value
-            sinf_val = sh_main.cell(r_num, sinf_col).value
-            cert_val = str(sh_main.cell(r_num, cert_col).value or "").strip()
-            email_val = sh_main.cell(r_num, email_col).value
-            pwd_val = sh_main.cell(r_num, pwd_col).value
-            time_val = sh_main.cell(r_num, time_col).value
-            is_cert_ok = bool(cert_val and "certificate?id=" in cert_val)
+            # 1. Barcha o'quvchilar ma'lumotlarini ajratib olamiz
+            all_records = []
+            for r_num in valid_rows:
+                fio_val = sh_main.cell(r_num, name_col).value
+                dob_val = sh_main.cell(r_num, bdate_col).value
+                ser_val = sh_main.cell(r_num, seria_col).value
+                num_val = sh_main.cell(r_num, num_col).value
+                sinf_val = sh_main.cell(r_num, sinf_col).value
+                cert_val = str(sh_main.cell(r_num, cert_col).value or "").strip()
+                email_val = sh_main.cell(r_num, email_col).value
+                pwd_val = sh_main.cell(r_num, pwd_col).value
+                time_val = sh_main.cell(r_num, time_col).value
+                is_cert_ok = bool(cert_val and "certificate?id=" in cert_val)
 
-            all_records.append({
-                "fio": fio_val,
-                "dob": dob_val,
-                "ser": ser_val,
-                "num": num_val,
-                "sinf": sinf_val,
-                "cert": cert_val,
-                "email": email_val,
-                "pwd": pwd_val,
-                "time": time_val,
-                "is_cert_ok": is_cert_ok
-            })
+                all_records.append({
+                    "fio": fio_val,
+                    "dob": dob_val,
+                    "ser": ser_val,
+                    "num": num_val,
+                    "sinf": sinf_val,
+                    "cert": cert_val,
+                    "email": email_val,
+                    "pwd": pwd_val,
+                    "time": time_val,
+                    "is_cert_ok": is_cert_ok
+                })
 
-        # 2. Sertifikat olganlarni TEPAGA, olmaganlarni PASTGA saralaymiz
-        certs_list = [r for r in all_records if r["is_cert_ok"]]
-        no_certs_list = [r for r in all_records if not r["is_cert_ok"]]
-        sorted_records = certs_list + no_certs_list
+            # 2. Sertifikat olganlarni TEPAGA, olmaganlarni PASTGA saralaymiz
+            certs_list = [r for r in all_records if r["is_cert_ok"]]
+            no_certs_list = [r for r in all_records if not r["is_cert_ok"]]
+            sorted_records = certs_list + no_certs_list
 
-        # Bosh sahifa Header
-        headers_main = ["T/r", "F.I.SH (Familiya Ism Sharif)", "Tug'ilgan sana", "Metrika seriyasi", "Metrika raqami", "Sinf", "Sertifikat havolasi / Holati", "Login (Email)", "Parol", "Sarflangan vaqt"]
-        sh_main.row_dimensions[1].height = 28
-        for col_i, h_text in enumerate(headers_main, 1):
-            cell = sh_main.cell(1, col_i, h_text)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = center_align
-            cell.border = thin_border
+            # Bosh sahifa Header
+            headers_main = ["T/r", "F.I.SH (Familiya Ism Sharif)", "Tug'ilgan sana", "Metrika seriyasi", "Metrika raqami", "Sinf", "Sertifikat havolasi / Holati", "Login (Email)", "Parol", "Sarflangan vaqt"]
+            sh_main.row_dimensions[1].height = 28
+            for col_i, h_text in enumerate(headers_main, 1):
+                cell = sh_main.cell(1, col_i, h_text)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = center_align
+                cell.border = thin_border
 
-        # 2-VARAQ: "Qayta ishlash kerak" (Muammoli o'quvchilar alohida jadvali)
-        if "Qayta ishlash kerak" in wb_final.sheetnames:
-            del wb_final["Qayta ishlash kerak"]
-        sh_fail = wb_final.create_sheet(title="Qayta ishlash kerak")
-        sh_fail.row_dimensions[1].height = 28
-        for col_i, h_text in enumerate(headers_main, 1):
-            cf = sh_fail.cell(1, col_i, h_text)
-            cf.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
-            cf.font = header_font
-            cf.alignment = center_align
-            cf.border = thin_border
+            # 2-VARAQ: "Qayta ishlash kerak" (Muammoli o'quvchilar alohida jadvali)
+            if "Qayta ishlash kerak" in wb_final.sheetnames:
+                del wb_final["Qayta ishlash kerak"]
+            sh_fail = wb_final.create_sheet(title="Qayta ishlash kerak")
+            sh_fail.row_dimensions[1].height = 28
+            for col_i, h_text in enumerate(headers_main, 1):
+                cf = sh_fail.cell(1, col_i, h_text)
+                cf.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+                cf.font = header_font
+                cf.alignment = center_align
+                cf.border = thin_border
 
-        # 3. 1 dan boshlab uzilishsiz ketma-ket jadvalni to'ldiramiz
-        cur_row = 2
-        fail_row = 2
-        for idx, rec in enumerate(sorted_records, 1):
-            row_fill = success_fill if rec["is_cert_ok"] else fail_fill
-            row_font = success_font if rec["is_cert_ok"] else fail_font
+            # 3. 1 dan boshlab uzilishsiz ketma-ket jadvalni to'ldiramiz
+            cur_row = 2
+            fail_row = 2
+            for idx, rec in enumerate(sorted_records, 1):
+                row_fill = success_fill if rec["is_cert_ok"] else fail_fill
+                row_font = success_font if rec["is_cert_ok"] else fail_font
 
-            sh_main.row_dimensions[cur_row].height = 22
-            sh_main.cell(cur_row, 1, idx).alignment = center_align
-            sh_main.cell(cur_row, 2, rec["fio"]).alignment = left_align
-            sh_main.cell(cur_row, 3, rec["dob"]).alignment = center_align
-            sh_main.cell(cur_row, 4, rec["ser"]).alignment = center_align
-            sh_main.cell(cur_row, 5, rec["num"]).alignment = center_align
-            sh_main.cell(cur_row, 6, rec["sinf"]).alignment = center_align
+                sh_main.row_dimensions[cur_row].height = 22
+                sh_main.cell(cur_row, 1, idx).alignment = center_align
+                sh_main.cell(cur_row, 2, rec["fio"]).alignment = left_align
+                sh_main.cell(cur_row, 3, rec["dob"]).alignment = center_align
+                sh_main.cell(cur_row, 4, rec["ser"]).alignment = center_align
+                sh_main.cell(cur_row, 5, rec["num"]).alignment = center_align
+                sh_main.cell(cur_row, 6, rec["sinf"]).alignment = center_align
             
-            c_cert = sh_main.cell(cur_row, 7, rec["cert"])
-            c_cert.alignment = center_align if not rec["is_cert_ok"] else left_align
-            if rec["is_cert_ok"]:
-                c_cert.hyperlink = rec["cert"]
-                c_cert.font = link_font
-            else:
-                c_cert.font = row_font
+                c_cert = sh_main.cell(cur_row, 7, rec["cert"])
+                c_cert.alignment = center_align if not rec["is_cert_ok"] else left_align
+                if rec["is_cert_ok"]:
+                    c_cert.hyperlink = rec["cert"]
+                    c_cert.font = link_font
+                else:
+                    c_cert.font = row_font
 
-            sh_main.cell(cur_row, 8, rec["email"] or "").alignment = left_align
-            sh_main.cell(cur_row, 9, rec["pwd"] or "").alignment = center_align
-            sh_main.cell(cur_row, 10, rec["time"] or "").alignment = center_align
+                sh_main.cell(cur_row, 8, rec["email"] or "").alignment = left_align
+                sh_main.cell(cur_row, 9, rec["pwd"] or "").alignment = center_align
+                sh_main.cell(cur_row, 10, rec["time"] or "").alignment = center_align
 
-            for c_i in range(1, 11):
-                c_cell = sh_main.cell(cur_row, c_i)
-                c_cell.fill = row_fill
-                c_cell.border = thin_border
-                if c_i != 7:
-                    c_cell.font = data_font
-
-            # Muammolilarni 2-varaqqa nusxalash
-            if not rec["is_cert_ok"]:
-                sh_fail.row_dimensions[fail_row].height = 22
                 for c_i in range(1, 11):
-                    val = sh_main.cell(cur_row, c_i).value
-                    cf = sh_fail.cell(fail_row, c_i, val)
-                    cf.fill = fail_fill
-                    cf.font = data_font
-                    cf.border = thin_border
-                    cf.alignment = sh_main.cell(cur_row, c_i).alignment
-                fail_row += 1
+                    c_cell = sh_main.cell(cur_row, c_i)
+                    c_cell.fill = row_fill
+                    c_cell.border = thin_border
+                    if c_i != 7:
+                        c_cell.font = data_font
 
-            cur_row += 1
+                # Muammolilarni 2-varaqqa nusxalash
+                if not rec["is_cert_ok"]:
+                    sh_fail.row_dimensions[fail_row].height = 22
+                    for c_i in range(1, 11):
+                        val = sh_main.cell(cur_row, c_i).value
+                        cf = sh_fail.cell(fail_row, c_i, val)
+                        cf.fill = fail_fill
+                        cf.font = data_font
+                        cf.border = thin_border
+                        cf.alignment = left_align if c_i in (2, 8) else center_align
+                    fail_row += 1
 
-        # 4. JADVAL PASTIDAGI JAMI VA XULOSA QATORLARI (FOOTER)
-        total_cnt = len(sorted_records)
-        certs_cnt = len(certs_list)
-        no_certs_cnt = len(no_certs_list)
-        p_ok = round((certs_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0
-        p_fail = round((no_certs_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0
+                cur_row += 1
 
-        cur_row += 1  # Bitta bo'sh ajratuvchi qator
+            # 4. JADVAL PASTIDAGI JAMI VA XULOSA QATORLARI (FOOTER)
+            total_cnt = len(sorted_records)
+            certs_cnt = len(certs_list)
+            no_certs_cnt = len(no_certs_list)
+            p_ok = round((certs_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0
+            p_fail = round((no_certs_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0
 
-        footer_data = [
-            ("📊 JAMI O'QUVCHILAR SONI:", f"{total_cnt} nafar (100%)", "1F4E78", "D9E1F2"),
-            ("🟢 SERTIFIKAT OLGAN O'QUVCHILAR:", f"{certs_cnt} nafar ({p_ok}%)", "276A3C", "E2EFDA"),
-            ("⚠️ SERTIFIKAT OLMAGAN O'QUVCHILAR:", f"{no_certs_cnt} nafar ({p_fail}%)", "C00000", "FCE4D6")
-        ]
+            cur_row += 1  # Bitta bo'sh ajratuvchi qator
 
-        for lbl, val, t_col, bg_col in footer_data:
-            sh_main.merge_cells(start_row=cur_row, start_column=1, end_row=cur_row, end_column=6)
-            sh_main.cell(cur_row, 1, lbl).alignment = Alignment(horizontal="right", vertical="center")
-            sh_main.cell(cur_row, 1).font = Font(name="Segoe UI", size=11, bold=True, color=t_col)
+            footer_data = [
+                ("📊 JAMI O'QUVCHILAR SONI:", f"{total_cnt} nafar (100%)", "1F4E78", "D9E1F2"),
+                ("🟢 SERTIFIKAT OLGAN O'QUVCHILAR:", f"{certs_cnt} nafar ({p_ok}%)", "276A3C", "E2EFDA"),
+                ("⚠️ SERTIFIKAT OLMAGAN O'QUVCHILAR:", f"{no_certs_cnt} nafar ({p_fail}%)", "C00000", "FCE4D6")
+            ]
 
-            sh_main.merge_cells(start_row=cur_row, start_column=7, end_row=cur_row, end_column=10)
-            sh_main.cell(cur_row, 7, val).alignment = Alignment(horizontal="center", vertical="center")
-            sh_main.cell(cur_row, 7).font = Font(name="Segoe UI", size=11, bold=True, color=t_col)
+            for lbl, val, t_col, bg_col in footer_data:
+                sh_main.merge_cells(start_row=cur_row, start_column=1, end_row=cur_row, end_column=6)
+                sh_main.cell(cur_row, 1, lbl).alignment = Alignment(horizontal="right", vertical="center")
+                sh_main.cell(cur_row, 1).font = Font(name="Segoe UI", size=11, bold=True, color=t_col)
 
-            f_fill = PatternFill(start_color=bg_col, end_color=bg_col, fill_type="solid")
-            for c_idx in range(1, 11):
-                c_f = sh_main.cell(cur_row, c_idx)
-                c_f.fill = f_fill
-                c_f.border = thin_border
+                sh_main.merge_cells(start_row=cur_row, start_column=7, end_row=cur_row, end_column=10)
+                sh_main.cell(cur_row, 7, val).alignment = Alignment(horizontal="center", vertical="center")
+                sh_main.cell(cur_row, 7).font = Font(name="Segoe UI", size=11, bold=True, color=t_col)
 
-            sh_main.row_dimensions[cur_row].height = 24
-            cur_row += 1
+                f_fill = PatternFill(start_color=bg_col, end_color=bg_col, fill_type="solid")
+                for c_idx in range(1, 11):
+                    c_f = sh_main.cell(cur_row, c_idx)
+                    c_f.fill = f_fill
+                    c_f.border = thin_border
 
-        # Ustun kengliklarini to'g'rilash (Auto-fit)
-        perfect_widths = {
-            1: 8,
-            2: 36,
-            3: 16,
-            4: 16,
-            5: 16,
-            6: 10,
-            7: 52,
-            8: 34,
-            9: 18,
-            10: 22
-        }
-        for ws in [sh_main, sh_fail]:
-            for c_idx, w_val in perfect_widths.items():
-                ws.column_dimensions[openpyxl.utils.get_column_letter(c_idx)].width = w_val
+                sh_main.row_dimensions[cur_row].height = 24
+                cur_row += 1
 
-        wb_final.save(excel_path)
+            # Ustun kengliklarini to'g'rilash (Auto-fit)
+            perfect_widths = {
+                1: 8,
+                2: 36,
+                3: 16,
+                4: 16,
+                5: 16,
+                6: 10,
+                7: 52,
+                8: 34,
+                9: 18,
+                10: 22
+            }
+            for ws in [sh_main, sh_fail]:
+                for c_idx, w_val in perfect_widths.items():
+                    ws.column_dimensions[openpyxl.utils.get_column_letter(c_idx)].width = w_val
 
+            wb_final.save(excel_path)
+
+        except Exception as e_style:
+            print(f"[EXCEL STYLING ERROR] {e_style}, asosiy natijalar saqlangan!", flush=True)
     return success_count, total_students, total_excel_duration
 
 
