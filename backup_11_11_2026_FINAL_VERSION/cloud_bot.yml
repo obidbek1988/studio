@@ -1,0 +1,127 @@
+name: Studio 24-7 Cloud Service
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 */5 * * *'
+
+concurrency:
+  group: studio-cloud-group
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  cloud-runner:
+    runs-on: windows-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Repositoriyani yuklash
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 ni sozlash
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Kutubxonalarni o'rnatish
+        shell: cmd
+        run: |
+          choco install ffmpeg -y --no-progress
+          python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper telethon soundfile SpeechRecognition
+          python -m playwright install chromium
+
+      - name: Private Core ni yuklash
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          python -c "import os; tok = os.environ.get('GH_TOKEN', ''); os.system(f'git clone https://x-access-token:{tok}@github.com/obidbek1988/studio-core.git core_temp')"
+          copy /Y core_temp\process_5million_excel.py .
+          copy /Y core_temp\students_db.json .
+          copy /Y core_temp\fetch_tg_code.py .
+          copy /Y core_temp\tg_session.session .
+          copy /Y core_temp\session_pool.py .
+          copy /Y core_temp\session_pool_state.json .
+          if exist core_temp\active_order_state.json copy /Y core_temp\active_order_state.json .
+          if not exist orders mkdir orders
+          if exist core_temp\active_order.xlsx copy /Y core_temp\active_order.xlsx orders\active_order.xlsx
+          python -c "import zipfile, glob, os; [zipfile.ZipFile(z).extractall('.') for z in glob.glob('core_temp/sessions*.zip')]; print(f'[SESSIONS] Jami {len(glob.glob(\"sessions/*.session\"))} ta sessiya xavfsiz ochildi!')"
+
+      - name: AnyDesk o'rnatish va sozlash
+        shell: cmd
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+        run: |
+          curl -fsSL "https://download.anydesk.com/AnyDesk.exe" -o anydesk.exe
+          anydesk.exe --install "C:\Program Files (x86)\AnyDesk" --silent
+          ping 127.0.0.1 -n 6 > nul
+          echo UzbekCoders2026! | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
+          python -c "import os, subprocess, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); res = subprocess.run([r'C:\Program Files (x86)\AnyDesk\AnyDesk.exe', '--get-id'], capture_output=True, text=True); aid = res.stdout.strip(); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': f'🚀 <b>Server muvaffaqiyatli qayta yondi!</b>\nQolgan o\'quvchilarni aynan to\'xtagan joyidan davom ettiraman.\n\n🖥 <b>AnyDesk ID:</b> <code>{aid}</code>\n🔑 <b>Parol:</b> <code>UzbekCoders2026!</code>\n\nUlanishingiz mumkin! Server 6 soat doimiy o\'chmasdan faol turadi.', 'parse_mode': 'HTML'}) if tok and cid else None"
+
+      - name: Cloudflare WARP o'rnatish va yoqish (Toza IP)
+        continue-on-error: true
+        shell: cmd
+        run: |
+          echo [WARP] Cloudflare WARP yuklab olinmoqda...
+          curl -fsSL "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi" -o warp.msi
+          echo [WARP] O'rnatilmoqda...
+          start /wait msiexec.exe /i warp.msi /quiet /qn /norestart
+          ping 127.0.0.1 -n 12 > nul
+          if exist "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" (
+              echo [WARP] Registratsiya va Ulanish...
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos registration new || echo Reg done
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos mode warp+doh || echo Mode done
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos connect || echo Connect done
+              ping 127.0.0.1 -n 8 > nul
+              echo [WARP] Ulandi!
+          ) else (
+              echo [WARP] warp-cli topilmadi, davom etilmoqda...
+          )
+
+      - name: Botni ishga tushirish va 3 ta Virtual Agentni yoqish
+        shell: cmd
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          CARD_INFO: ${{ secrets.CARD_INFO }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CLOUD_MODE: "1"
+        run: |
+          if exist bot_pause_state.txt del /F /Q bot_pause_state.txt
+          start /min "TelegramBotMaster" cmd /k "python telegram_bot.py"
+          ping 127.0.0.1 -n 8 > nul
+          start /min "CloudAgent1" cmd /k "set AGENT_ID=Cloud_Agent_1&& set MASTER_URL=http://127.0.0.1:8080&& python cluster_agent.py"
+          ping 127.0.0.1 -n 4 > nul
+          start /min "CloudAgent2" cmd /k "set AGENT_ID=Cloud_Agent_2&& set MASTER_URL=http://127.0.0.1:8080&& python cluster_agent.py"
+          ping 127.0.0.1 -n 4 > nul
+          start /min "CloudAgent3" cmd /k "set AGENT_ID=Cloud_Agent_3&& set MASTER_URL=http://127.0.0.1:8080&& python cluster_agent.py"
+          echo ============================================================
+          echo Master Server va 3 ta Virtual Agent ishga tushdi!
+          echo 5 soat 15 daqiqa (315 daqiqa) doimiy xizmat ko'rsatiladi...
+          echo ============================================================
+          for /L %%i in (1,1,315) do (
+              ping 127.0.0.1 -n 60 > nul
+          )
+          echo [DRAIN] 5 soat 15 daqiqa to'ldi. Xavfsiz qayta yoqilishga tayyorlanmoqda...
+
+      - name: Xavfsiz Git Push (Zaxira holati va Avto-Restart)
+        if: always()
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+        run: |
+          python -c "import os, requests; tok = os.environ.get('BOT_TOKEN'); cid = os.environ.get('ADMIN_ID'); requests.post(f'https://api.telegram.org/bot{tok}/sendMessage', json={'chat_id': int(cid), 'text': '⏰ <b>Server 6 soatlik limitga yaqinlashdi.</b>\nBarcha o\'quvchilar va sessiyalar to\'liq saqlandi! Server yangidan o\'chib-yonadi...', 'parse_mode': 'HTML'}) if tok and cid else None"
+          python -c "import os, subprocess, shutil; [shutil.copy2(f, os.path.join('core_temp', os.path.basename(f))) for f in ['students_db.json', 'session_pool_state.json', 'active_order_state.json', 'orders/active_order.xlsx'] if os.path.exists(f) and os.path.exists('core_temp')]; subprocess.run(['git', '-C', 'core_temp', 'config', 'user.name', 'obidbek1988']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'config', 'user.email', 'obidbek1988@gmail.com']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'add', '-A']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'commit', '-m', 'Auto-save state before 6h restart']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'push', 'origin', 'main']) if os.path.exists('core_temp') else None"
+          git config --global user.name "StudioCloudCluster"
+          git config --global user.email "cloud@studio.local"
+          git add cluster_queue.json session_pool_state.json
+          git commit -m "Auto-backup state before restart" || echo No changes
+          git push || echo Push skipped
+          python -c "import os, requests; tok = os.environ.get('GH_TOKEN'); requests.post('https://api.github.com/repos/obidbek1988/studio/actions/workflows/cloud_bot.yml/dispatches', headers={'Authorization': f'token {tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main'}, timeout=15) if tok else None; print('[RESTART] Yangi 6 soatlik server ishga tushirildi!')"
