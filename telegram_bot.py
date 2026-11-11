@@ -1540,6 +1540,13 @@ class TelegramBotServer:
             fail = order_progress_state["failed"]
             pct = int((done / total * 100)) if total > 0 else (100 if succ > 0 else 0)
 
+            act_workers = 0
+            try:
+                import process_5million_excel
+                act_workers = process_5million_excel.get_active_token_workers()
+            except Exception:
+                pass
+
             # Progress bar
             filled = int(pct / 10)
             bar = "█" * filled + "░" * (10 - filled)
@@ -1553,7 +1560,8 @@ class TelegramBotServer:
                 f"👥 Jami o'quvchilar: <b>{total} ta</b>\n"
                 f"✅ Sertifikat olinganlar: <b>{succ} ta</b>\n"
                 f"⚠️ Olinmagan/Qayta urinish: <b>{fail} ta</b>\n"
-                f"⏳ Qolgan: <b>{max(0, total - done)} ta</b>"
+                f"⏳ Qolgan: <b>{max(0, total - done)} ta</b>\n"
+                f"⚡ Orqa fonda faol oqimlar: <b>{act_workers}/10 nafar</b>"
             )
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return

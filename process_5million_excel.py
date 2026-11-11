@@ -25,6 +25,11 @@ DB_PATH = BASE_DIR / "students_db.json"
 db_lock = threading.Lock()
 PARALLEL_WORKERS = 10
 excel_lock = threading.Lock()
+CURRENT_ACTIVE_TOKEN_WORKERS = 0
+
+def get_active_token_workers():
+    global CURRENT_ACTIVE_TOKEN_WORKERS
+    return CURRENT_ACTIVE_TOKEN_WORKERS
 
 def normalize_birthdate_for_input(raw_bdate):
     """
@@ -3172,6 +3177,9 @@ def process_excel_order(excel_path, update_callback=None):
             # Login muvaffaqiyatli bo'lsa, darslarni yopish va sertifikat olishni fondagi parallel workerga topshiramiz:
             fut = executor.submit(run_worker_task, student, r, token, email, pwd, student_start_time, idx_str)
             active_workers.append(fut)
+            CURRENT_ACTIVE_TOKEN_WORKERS = len([f for f in active_workers if not f.done()])
+            if update_callback:
+                update_callback(f"⚡ <b>{student['name']}</b>: Token olindi! Darslarni yopishga topshirildi (Orqa fonda: <b>{CURRENT_ACTIVE_TOKEN_WORKERS}/{PARALLEL_WORKERS}</b> faol)...")
 
             if PARALLEL_WORKERS <= 1:
                 fut.result()
