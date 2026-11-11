@@ -3236,6 +3236,16 @@ def process_excel_order(excel_path, update_callback=None):
                 time_val = sh_main.cell(r_num, time_col).value
                 is_cert_ok = bool(cert_val and "certificate?id=" in cert_val)
 
+                # Agar katakda sertifikat yozilmay qolgan bo'lsa, bazadan to'ldiramiz (Parallel oqimlar bazaga 100% yozadi):
+                if not is_cert_ok:
+                    db_rec = get_student_from_db(ser_val, num_val)
+                    if db_rec and db_rec.get("certificate") and "certificate?id=" in db_rec["certificate"]:
+                        cert_val = db_rec["certificate"]
+                        if not email_val and db_rec.get("login"): email_val = db_rec["login"]
+                        if not pwd_val and db_rec.get("password"): pwd_val = db_rec["password"]
+                        if not time_val: time_val = "Tayyor"
+                        is_cert_ok = True
+
                 all_records.append({
                     "fio": fio_val,
                     "dob": dob_val,
