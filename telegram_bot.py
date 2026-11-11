@@ -1369,7 +1369,6 @@ class TelegramBotServer:
                     PAUSE_FILE.unlink()
                 except Exception:
                     pass
-            save_active_order({"status": "CANCELLED"})
 
             global is_queue_worker_running
             if is_queue_worker_running:

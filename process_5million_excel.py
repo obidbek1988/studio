@@ -597,65 +597,41 @@ def switch_to_login_tab(page):
 
 def perform_safe_login(page, email, password, name="", notify=None):
     """Xavfsiz va reload-bardoshli login qilish (Input bo'shab qolishidan himoyalangan)"""
-    for attempt in range(1, 4):
+    for attempt in range(1, 3):
         try:
             page.goto("https://omp.aistudy.uz/auth/login?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
-            page.wait_for_timeout(2500)
+            page.wait_for_timeout(2000)
             page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
 
             switch_to_login_tab(page)
-            time.sleep(1)
+            time.sleep(0.5)
 
             u_inp = page.locator("input#username, input[formcontrolname='username']").first
             u_inp.click(force=True)
             u_inp.fill(email)
-            time.sleep(0.5)
+            time.sleep(0.3)
 
             p_inp = page.locator("input#password, input[formcontrolname='password']").first
             p_inp.click(force=True)
             p_inp.fill(password)
-            time.sleep(1)
-
-            if notify:
-                notify(f"🎧 [{name}] reCAPTCHA audio Whisper AI orqali yechilmoqda ({attempt}-urinish)...")
-
-            c_ok = handle_recaptcha(page)
-            time.sleep(1)
-
-            if not c_ok:
-                print(f"[LOGIN CAPTCHA BLOCKED] {attempt}-urinishda kapcha bloklandi. Cloudflare yangi toza IP olinmoqda...")
-                if notify:
-                    notify(f"⏳ [{name}] Google kapcha bloki aniqlandi. Yangi toza IP olinmoqda ({attempt}/5)...")
-                toggle_warp()
-                time.sleep(4)
-                continue
-
-            # AGAR KAPCHA VAQTIDA SAHIFA RELOAD BO'LSA, INPUTLAR TOZALANIB QOLGAN BO'LADI!
-            # Shuning uchun yana bir bor tekshiramiz va agar bo'sh bo'lsa, qayta to'ldiramiz!
-            switch_to_login_tab(page)
             time.sleep(0.5)
-            try:
-                cur_u = page.locator("input#username, input[formcontrolname='username']").first.input_value()
-                if not cur_u or cur_u != email:
-                    print(f"[RE-FILL LOGIN] Input bo'sh qolgan yoki reload bo'lgan, qayta to'ldirilmoqda: {email}")
-                    u2 = page.locator("input#username, input[formcontrolname='username']").first
-                    u2.click(force=True)
-                    u2.fill(email)
-                    time.sleep(0.5)
-                    p2 = page.locator("input#password, input[formcontrolname='password']").first
-                    p2.click(force=True)
-                    p2.fill(password)
-                    time.sleep(1)
-            except Exception as e_rf:
-                print(f"[RE-FILL ERROR] {e_rf}")
+
+            # Anchor katakchani bosib ko'rish
+            for f in page.frames:
+                if "anchor" in f.url:
+                    try:
+                        f.click("#recaptcha-anchor", timeout=2500, force=True)
+                        time.sleep(1.5)
+                    except Exception:
+                        pass
 
             # Endi "Tizimga kirish" tugmasini bosamiz
             page.locator("button:has-text('Tizimga kirish')").last.click(force=True)
-            page.wait_for_timeout(4000)
+            page.wait_for_timeout(3500)
 
             token = page.evaluate("() => localStorage.getItem('accessToken')")
             if not token:
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(2500)
                 token = page.evaluate("() => localStorage.getItem('accessToken')")
 
             if token:
@@ -664,14 +640,13 @@ def perform_safe_login(page, email, password, name="", notify=None):
 
             page_text = page.content().lower()
             if "topilmadi" in page_text or "not found" in page_text or "mavjud emas" in page_text:
-                print(f"[LOGIN NOT FOUND] '{email}' bo'yicha foydalanuvchi topilmadi! Qayta ro'yxatdan o'tishga yo'naltiriladi...")
+                print(f"[LOGIN NOT FOUND] '{email}' bo'yicha foydalanuvchi topilmadi!")
                 return None
 
-            print(f"[LOGIN RETRY] {attempt}-urinishda token olinmadi, qayta urinilmoqda...")
-            time.sleep(2)
+            time.sleep(1)
         except Exception as el:
             print(f"[LOGIN EXCEPTION] {el}")
-            time.sleep(2)
+            time.sleep(1)
     return None
 
 def recover_and_login_student(page, pnfl, name="", notify=None, default_password="Dilnuraxon2015"):
@@ -1553,13 +1528,15 @@ def login_or_register_single_student(student, update_callback=None):
             registration_success = False
 
             # O'quvchini "Try again later" bo'lganda tashlab ketmasdan, 3 martagacha qaytadan boshidan urinish!
-            student_loop_start = time.time()
+            # SMART TIMEOUT: Kapcha yechish, IP almashtirish va Telegram kod kutish vaqti
+            # bu hisobga kirmaydi! Sof qotib qolish / harakatsizlik vaqti 180 soniya (3 daqiqa).
+            student_idle_start = time.time()
             for student_cycle in range(1, 4):
                 if registration_success or token:
                     break
-                if time.time() - student_loop_start > 150:
-                    print(f"[STUDENT TIMEOUT] {name} uchun 2.5 daqiqalik limit to'ldi, keyingi o'quvchiga o'tilmoqda...", flush=True)
-                    notify(f"⏱ [{name}] Ro'yxatdan o'tish 2.5 daqiqadan oshdi, keyingi o'quvchiga o'tilmoqda...")
+                if time.time() - student_idle_start > 180:
+                    print(f"[STUDENT TIMEOUT] {name} uchun 3 daqiqalik harakatsizlik limiti to'ldi, keyingi o'quvchiga o'tilmoqda...", flush=True)
+                    notify(f"⏱ [{name}] Jarayon 3 daqiqa qotib qolgani sababli, keyingi o'quvchiga o'tilmoqda...")
                     break
 
                 is_already_registered = False
@@ -1639,6 +1616,7 @@ def login_or_register_single_student(student, update_callback=None):
                     # reCAPTCHA ni AI bilan yechish
                     notify(f"🎧 [{name}] reCAPTCHA Whisper AI orqali yechilmoqda ({form_attempt}/3)...")
                     captcha_solved = handle_recaptcha(page)
+                    student_idle_start = time.time()  # Kapchadan keyin taymer yangilanadi
 
                     if not captcha_solved:
                         print(f"[RECAPTCHA TRY AGAIN LATER] Metrikada blok berildi. IP yangilanmoqda...")
@@ -1770,10 +1748,6 @@ def login_or_register_single_student(student, update_callback=None):
                     if known_pwd:
                         candidate_passwords.append(known_pwd)
 
-                    # 1. Saytdagi loginning o'zini parol sifatida sinash (Login = Parol):
-                    if detected_login and detected_login not in candidate_passwords:
-                        candidate_passwords.append(detected_login)
-
                     # Agar login bizning bot ochgan login bo'lsa (maktab. bilan boshlansa)
                     if "maktab." in detected_login.lower():
                         if student_password and student_password not in candidate_passwords:
@@ -1784,6 +1758,10 @@ def login_or_register_single_student(student, update_callback=None):
                                 candidate_passwords.append(alt_pwd)
                         if "Maktab29" not in candidate_passwords:
                             candidate_passwords.append("Maktab29")
+
+                    # Saytdagi loginning o'zini parol sifatida sinash (Login = Parol):
+                    if detected_login and detected_login not in candidate_passwords:
+                        candidate_passwords.append(detected_login)
 
                     # Ehtimoliy parollar bilan tizimga kirishni sinab ko'ramiz
                     logged_in = False
@@ -1948,11 +1926,13 @@ def login_or_register_single_student(student, update_callback=None):
 
                             notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) tasdiqlash kodi olinmoqda ...")
                             code, session_used = get_telegram_verification_code()
+                            student_idle_start = time.time()  # Kod kelgach taymer yangilanadi
                             if code:
                                 notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
                             if not code:
                                 time.sleep(3)
                                 code, session_used = get_telegram_verification_code()
+                                student_idle_start = time.time()
                             if not code:
                                 notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
                                 continue
@@ -2346,6 +2326,7 @@ def process_single_student(student, update_callback=None):
                     # reCAPTCHA ni AI bilan yechish
                     notify(f"🎧 [{name}] reCAPTCHA Whisper AI orqali yechilmoqda ({form_attempt}/3)...")
                     captcha_solved = handle_recaptcha(page)
+                    student_idle_start = time.time()  # Kapchadan keyin taymer yangilanadi
 
                     if not captcha_solved:
                         print(f"[RECAPTCHA TRY AGAIN LATER] Metrikada blok berildi. IP yangilanmoqda...")
@@ -2660,11 +2641,13 @@ def process_single_student(student, update_callback=None):
 
                             notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) tasdiqlash kodi olinmoqda ...")
                             code, session_used = get_telegram_verification_code()
+                            student_idle_start = time.time()  # Kod kelgach taymer yangilanadi
                             if code:
                                 notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
                             if not code:
                                 time.sleep(3)
                                 code, session_used = get_telegram_verification_code()
+                                student_idle_start = time.time()
                             if not code:
                                 notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
                                 continue
@@ -3170,12 +3153,13 @@ def process_excel_order(excel_path, update_callback=None):
 
         # Zamonaviy styllar
         header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        success_fill = PatternFill(start_color="E2F0D9", end_color="E2F0D9", fill_type="solid")
-        success_font = Font(name="Calibri", size=11, color="276A3C", bold=True)
+        header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+        success_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        success_font = Font(name="Segoe UI", size=10, color="276A3C", bold=True)
         fail_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
-        fail_font = Font(name="Calibri", size=11, color="C00000")
-        link_font = Font(name="Calibri", size=11, color="0000FF", underline="single", bold=True)
+        fail_font = Font(name="Segoe UI", size=10, color="C00000")
+        link_font = Font(name="Segoe UI", size=10, color="0563C1", underline="single", bold=True)
+        data_font = Font(name="Segoe UI", size=10)
         thin_border = Border(
             left=Side(style='thin', color='D9D9D9'),
             right=Side(style='thin', color='D9D9D9'),
@@ -3185,63 +3169,140 @@ def process_excel_order(excel_path, update_callback=None):
         center_align = Alignment(horizontal="center", vertical="center")
         left_align = Alignment(horizontal="left", vertical="center")
 
-        # 1. Bosh sahifa (Header formatlash)
-        sh_main.row_dimensions[h_row].height = 28
-        for col_i in range(1, 11):
-            cell = sh_main.cell(h_row, col_i)
+        # 1. Barcha o'quvchilar ma'lumotlarini ajratib olamiz
+        all_records = []
+        for r_num in valid_rows:
+            fio_val = sh_main.cell(r_num, name_col).value
+            dob_val = sh_main.cell(r_num, dob_col).value
+            ser_val = sh_main.cell(r_num, seria_col).value
+            num_val = sh_main.cell(r_num, num_col).value
+            sinf_val = sh_main.cell(r_num, sinf_col).value
+            cert_val = str(sh_main.cell(r_num, cert_col).value or "").strip()
+            email_val = sh_main.cell(r_num, email_col).value
+            pwd_val = sh_main.cell(r_num, pwd_col).value
+            time_val = sh_main.cell(r_num, time_col).value
+            is_cert_ok = bool(cert_val and "certificate?id=" in cert_val)
+
+            all_records.append({
+                "fio": fio_val,
+                "dob": dob_val,
+                "ser": ser_val,
+                "num": num_val,
+                "sinf": sinf_val,
+                "cert": cert_val,
+                "email": email_val,
+                "pwd": pwd_val,
+                "time": time_val,
+                "is_cert_ok": is_cert_ok
+            })
+
+        # 2. Sertifikat olganlarni TEPAGA, olmaganlarni PASTGA saralaymiz
+        certs_list = [r for r in all_records if r["is_cert_ok"]]
+        no_certs_list = [r for r in all_records if not r["is_cert_ok"]]
+        sorted_records = certs_list + no_certs_list
+
+        # Bosh sahifa Header
+        headers_main = ["T/r", "F.I.SH (Familiya Ism Sharif)", "Tug'ilgan sana", "Metrika seriyasi", "Metrika raqami", "Sinf", "Sertifikat havolasi / Holati", "Login (Email)", "Parol", "Sarflangan vaqt"]
+        sh_main.row_dimensions[1].height = 28
+        for col_i, h_text in enumerate(headers_main, 1):
+            cell = sh_main.cell(1, col_i, h_text)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = center_align
             cell.border = thin_border
 
-        # 2. 2-VARAQ: "Qayta ishlash kerak" (Muammoli o'quvchilar alohida jadvali)
+        # 2-VARAQ: "Qayta ishlash kerak" (Muammoli o'quvchilar alohida jadvali)
         if "Qayta ishlash kerak" in wb_final.sheetnames:
             del wb_final["Qayta ishlash kerak"]
         sh_fail = wb_final.create_sheet(title="Qayta ishlash kerak")
-
-        fail_headers = ["T/r", "F.I.SH", "Tug'ilgan sana", "Metrika seriyasi", "Metrika raqami", "Sinf", "Holati / Sababi", "Login (Email)", "Parol", "Sarflangan vaqt"]
-        fail_header_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
         sh_fail.row_dimensions[1].height = 28
-        for col_i, h_name in enumerate(fail_headers, 1):
-            c_f = sh_fail.cell(1, col_i, h_name)
-            c_f.fill = fail_header_fill
-            c_f.font = header_font
-            c_f.alignment = center_align
-            c_f.border = thin_border
+        for col_i, h_text in enumerate(headers_main, 1):
+            cf = sh_fail.cell(1, col_i, h_text)
+            cf.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+            cf.font = header_font
+            cf.alignment = center_align
+            cf.border = thin_border
 
-        fail_row_idx = 2
+        # 3. 1 dan boshlab uzilishsiz ketma-ket jadvalni to'ldiramiz
+        cur_row = 2
+        fail_row = 2
+        for idx, rec in enumerate(sorted_records, 1):
+            row_fill = success_fill if rec["is_cert_ok"] else fail_fill
+            row_font = success_font if rec["is_cert_ok"] else fail_font
 
-        # Barcha qatorlarni rangli formatlash va muammolilarni 2-varaqqa nusxalash:
-        for r_num in valid_rows:
-            c_val = str(sh_main.cell(r_num, cert_col).value or "").strip()
-            is_cert_ok = ("certificate?id=" in c_val)
+            sh_main.row_dimensions[cur_row].height = 22
+            sh_main.cell(cur_row, 1, idx).alignment = center_align
+            sh_main.cell(cur_row, 2, rec["fio"]).alignment = left_align
+            sh_main.cell(cur_row, 3, rec["dob"]).alignment = center_align
+            sh_main.cell(cur_row, 4, rec["ser"]).alignment = center_align
+            sh_main.cell(cur_row, 5, rec["num"]).alignment = center_align
+            sh_main.cell(cur_row, 6, rec["sinf"]).alignment = center_align
+            
+            c_cert = sh_main.cell(cur_row, 7, rec["cert"])
+            c_cert.alignment = center_align if not rec["is_cert_ok"] else left_align
+            if rec["is_cert_ok"]:
+                c_cert.hyperlink = rec["cert"]
+                c_cert.font = link_font
+            else:
+                c_cert.font = row_font
 
-            row_fill = success_fill if is_cert_ok else fail_fill
-            row_font = success_font if is_cert_ok else fail_font
+            sh_main.cell(cur_row, 8, rec["email"] or "").alignment = left_align
+            sh_main.cell(cur_row, 9, rec["pwd"] or "").alignment = center_align
+            sh_main.cell(cur_row, 10, rec["time"] or "").alignment = center_align
 
-            sh_main.row_dimensions[r_num].height = 22
-            for col_i in range(1, 11):
-                c = sh_main.cell(r_num, col_i)
-                c.fill = row_fill
-                c.border = thin_border
-                c.alignment = center_align if col_i in [1, 3, 4, 5, 6, 10] else left_align
-                if col_i == cert_col and is_cert_ok:
-                    c.hyperlink = c_val
-                    c.font = link_font
-                else:
-                    c.font = row_font
+            for c_i in range(1, 11):
+                c_cell = sh_main.cell(cur_row, c_i)
+                c_cell.fill = row_fill
+                c_cell.border = thin_border
+                if c_i != 7:
+                    c_cell.font = data_font
 
-            # Agar sertifikat olinmagan bo'lsa -> 2-varaqqa nusxalaymiz
-            if not is_cert_ok:
-                sh_fail.row_dimensions[fail_row_idx].height = 22
-                for col_i in range(1, 11):
-                    val = sh_main.cell(r_num, col_i).value
-                    cf = sh_fail.cell(fail_row_idx, col_i, val)
+            # Muammolilarni 2-varaqqa nusxalash
+            if not rec["is_cert_ok"]:
+                sh_fail.row_dimensions[fail_row].height = 22
+                for c_i in range(1, 11):
+                    val = sh_main.cell(cur_row, c_i).value
+                    cf = sh_fail.cell(fail_row, c_i, val)
                     cf.fill = fail_fill
-                    cf.font = fail_font
+                    cf.font = data_font
                     cf.border = thin_border
-                    cf.alignment = center_align if col_i in [1, 3, 4, 5, 6, 10] else left_align
-                fail_row_idx += 1
+                    cf.alignment = sh_main.cell(cur_row, c_i).alignment
+                fail_row += 1
+
+            cur_row += 1
+
+        # 4. JADVAL PASTIDAGI JAMI VA XULOSA QATORLARI (FOOTER)
+        total_cnt = len(sorted_records)
+        certs_cnt = len(certs_list)
+        no_certs_cnt = len(no_certs_list)
+        p_ok = round((certs_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0
+        p_fail = round((no_certs_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0
+
+        cur_row += 1  # Bitta bo'sh ajratuvchi qator
+
+        footer_data = [
+            ("📊 JAMI O'QUVCHILAR SONI:", f"{total_cnt} nafar (100%)", "1F4E78", "D9E1F2"),
+            ("🟢 SERTIFIKAT OLGAN O'QUVCHILAR:", f"{certs_cnt} nafar ({p_ok}%)", "276A3C", "E2EFDA"),
+            ("⚠️ SERTIFIKAT OLMAGAN O'QUVCHILAR:", f"{no_certs_cnt} nafar ({p_fail}%)", "C00000", "FCE4D6")
+        ]
+
+        for lbl, val, t_col, bg_col in footer_data:
+            sh_main.merge_cells(start_row=cur_row, start_column=1, end_row=cur_row, end_column=6)
+            sh_main.cell(cur_row, 1, lbl).alignment = Alignment(horizontal="right", vertical="center")
+            sh_main.cell(cur_row, 1).font = Font(name="Segoe UI", size=11, bold=True, color=t_col)
+
+            sh_main.merge_cells(start_row=cur_row, start_column=7, end_row=cur_row, end_column=10)
+            sh_main.cell(cur_row, 7, val).alignment = Alignment(horizontal="center", vertical="center")
+            sh_main.cell(cur_row, 7).font = Font(name="Segoe UI", size=11, bold=True, color=t_col)
+
+            f_fill = PatternFill(start_color=bg_col, end_color=bg_col, fill_type="solid")
+            for c_idx in range(1, 11):
+                c_f = sh_main.cell(cur_row, c_idx)
+                c_f.fill = f_fill
+                c_f.border = thin_border
+
+            sh_main.row_dimensions[cur_row].height = 24
+            cur_row += 1
 
         # Ustun kengliklarini to'g'rilash (Auto-fit)
         perfect_widths = {

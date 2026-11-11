@@ -55,25 +55,27 @@ def get_candidate_sessions():
 
     exhausted = {normalize_session_name(x) for x in raw_exhausted if x}
     unauth = {normalize_session_name(x) for x in raw_unauth if x}
-    active = normalize_session_name(state.get("active_session"))
+    counts = state.get("success_counts", {})
 
-    candidates = []
-    if active and active not in exhausted and active not in unauth:
-        candidates.append(active)
-
+    # Faqat toza, limitga yetmagan sessiyalarni saralash (success_counts kichiklari oldinda)
+    fresh_candidates = []
     for s in valid:
         clean_s = normalize_session_name(s)
-        if clean_s and clean_s not in exhausted and clean_s not in unauth and clean_s not in candidates:
-            candidates.append(clean_s)
+        if clean_s and clean_s not in exhausted and clean_s not in unauth:
+            fresh_candidates.append(clean_s)
 
-    if not candidates and os.path.exists(SESSIONS_DIR):
+    # 0 marta ishlatilgan mutlaqo toza sessiyalar eng birinchi o'rinda bo'ladi!
+    fresh_candidates.sort(key=lambda x: counts.get(x, 0))
+
+    if not fresh_candidates and os.path.exists(SESSIONS_DIR):
         for fn in os.listdir(SESSIONS_DIR):
             if fn.endswith(".session"):
                 name = fn[:-8]
                 clean_n = normalize_session_name(name)
-                if clean_n and clean_n not in exhausted and clean_n not in unauth and clean_n not in candidates:
-                    candidates.append(clean_n)
-    return candidates
+                if clean_n and clean_n not in exhausted and clean_n not in unauth and clean_n not in fresh_candidates:
+                    fresh_candidates.append(clean_n)
+
+    return fresh_candidates
 
 def mark_session_exhausted(session_name, reason="limit_reached"):
     state = load_state()
@@ -180,7 +182,7 @@ async def _fetch_from_one_session(session_name):
 
         # Kodni kutish - FAQAT tugma bosilgandan KEYIN kelgan yangi xabarni olamiz!
         phone_num = f"+{me.phone}" if me.phone else session_name
-        for wait_s in range(1, 26):
+        for wait_s in range(1, 16):
             await asyncio.sleep(1)
             latest = await c.get_messages(bot, limit=3)
             for m in latest:
@@ -190,9 +192,17 @@ async def _fetch_from_one_session(session_name):
                 if m.date.timestamp() < (click_time - 2):
                     continue
 
-                txt = m.text or ""
+                txt = (m.text or "").strip()
+                txt_low = txt.lower()
+
+                # Agar bot limit yoki taqiq xabari bersa - zudlik bilan sessiyani chetlatamiz!
+                if any(w in txt_low for w in ["limit", "cheklov", "faqat bitta", "bitta telefon", "kechirasiz", "mumkin emas", "qayta urin"]):
+                    print(f"[TG BOT LIMIT DETECTED] ({phone_num}) limitga tushgan: {txt[:60]}", flush=True)
+                    await c.disconnect()
+                    return None, "limit_exhausted"
+
                 m_code = re.search(r'\b(\d{6})\b', txt)
-                if m_code and any(w in txt.lower() for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
+                if m_code and any(w in txt_low for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
                     code = m_code.group(1)
                     print(f"\n=======================================================", flush=True)
                     print(f"[TG BOT XABAR] ({phone_num}) dan YANGI kod keldi: [{code}]", flush=True)
@@ -221,23 +231,22 @@ def fetch_tg_code_from_pool(max_candidates=5):
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s)), s_name)
-                code, status = fut.result(timeout=45.0)
+                code, status = fut.result(timeout=25.0)
 
             if code:
                 phone_display = status if status and status != "ok" else s_name
                 print(f"[SESSION POOL CODE] {phone_display} dan yangi kod olindi: [{code}]", flush=True)
-                state["active_session"] = s_name
-                save_state(state)
+                # Muvaffaqiyatli sessiyani yozib qo'yamiz va navbatdagisiga o'tamiz
+                state["active_session"] = None
+                record_session_success(s_name)
                 return code, phone_display
             else:
-                print(f"[SESSION POOL] {s_name} ({status}), navbatdagisiga o'tilmoqda...", flush=True)
-                if status == "unauthorized":
-                    unauth = set(state.get("unauthorized", []))
-                    unauth.add(s_name)
-                    state["unauthorized"] = list(unauth)
-                    save_state(state)
+                print(f"[SESSION POOL] {s_name} ({status}), sessiyalar ro'yxatidan chetlatilmoqda...", flush=True)
+                # Har qanday muammoli yoki javob bermagan sessiyani darhol chetlatamiz!
+                mark_session_exhausted(s_name, reason=status or "no_code")
         except Exception as ex:
             print(f"[SESSION POOL ERROR] {s_name}: {ex}", flush=True)
+            mark_session_exhausted(s_name, reason="exception")
 
     return None, None
 
