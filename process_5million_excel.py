@@ -1553,8 +1553,13 @@ def login_or_register_single_student(student, update_callback=None):
             registration_success = False
 
             # O'quvchini "Try again later" bo'lganda tashlab ketmasdan, 3 martagacha qaytadan boshidan urinish!
+            student_loop_start = time.time()
             for student_cycle in range(1, 4):
                 if registration_success or token:
+                    break
+                if time.time() - student_loop_start > 150:
+                    print(f"[STUDENT TIMEOUT] {name} uchun 2.5 daqiqalik limit to'ldi, keyingi o'quvchiga o'tilmoqda...", flush=True)
+                    notify(f"⏱ [{name}] Ro'yxatdan o'tish 2.5 daqiqadan oshdi, keyingi o'quvchiga o'tilmoqda...")
                     break
 
                 is_already_registered = False

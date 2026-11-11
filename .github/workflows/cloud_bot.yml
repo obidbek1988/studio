@@ -110,6 +110,7 @@ jobs:
           echo [DRAIN] 5 soat 15 daqiqa to'ldi. Xavfsiz qayta yoqilishga tayyorlanmoqda...
 
       - name: Xavfsiz Git Push (Zaxira holati va Avto-Restart)
+        if: always()
         shell: cmd
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
