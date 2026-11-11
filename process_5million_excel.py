@@ -2993,7 +2993,14 @@ def process_excel_order(excel_path, update_callback=None):
 
     def run_worker_task(student_data, row_idx, tok, em, pw, start_t, idx_label):
         try:
-            cert_url = complete_student_courses_api(tok, student_data, notify=update_callback)
+            def worker_notify(m):
+                if update_callback:
+                    if idx_label and not str(m).strip().startswith(idx_label.strip()):
+                        update_callback(f"{idx_label} {m}")
+                    else:
+                        update_callback(m)
+
+            cert_url = complete_student_courses_api(tok, student_data, notify=worker_notify)
             duration_str = format_duration(time.time() - start_t)
             if cert_url and "certificate?id=" in cert_url:
                 with excel_lock:
