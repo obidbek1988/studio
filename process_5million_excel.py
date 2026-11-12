@@ -280,6 +280,37 @@ def switch_ip():
     time.sleep(2)
     return True
 
+def launch_universal_browser(p, headless=True):
+    """
+    Universal brauzer ochuvchi:
+    1. Yopiq (headless=True) rejimda: ekranda oyna ochilmaydi, orqa fonda tez va jim ishlaydi.
+    2. Universal: agar tizimda Google Chrome bo'lsa 'chrome' kanali bilan ochadi.
+       Agar Google Chrome o'rnatilmagan bo'lsa, avtomatik ravishda standart Playwright Chromium orqali ochadi.
+    3. Windows, noutbuk, VPS va Cloud muhitlarida 100% universal ishlaydi.
+    """
+    browser_args = [
+        "--no-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=Translate",
+        "--no-default-browser-check",
+        "--disable-popup-blocking",
+        "--mute-audio"
+    ]
+    env_headless = os.environ.get("HEADLESS", "1").strip().lower()
+    actual_headless = headless if env_headless not in ("0", "false", "no") else False
+
+    try:
+        return p.chromium.launch(
+            channel="chrome",
+            headless=actual_headless,
+            args=browser_args
+        )
+    except Exception:
+        return p.chromium.launch(
+            headless=actual_headless,
+            args=browser_args
+        )
+
 def solve_audio_captcha(page, timeout=30):
     """Audio reCAPTCHA'ni SpeechRecognition (Google STT) va Whisper AI yordamida 100% yechish"""
     mp3_path = None
@@ -615,9 +646,18 @@ def switch_to_login_tab(page):
             time.sleep(1)
     return False
 
+LAST_LOGIN_ERROR = ""
+
 def perform_safe_login(page, email, password, name="", notify=None):
-    """Xavfsiz va reload-bardoshli login qilish (Input bo'shab qolishidan himoyalangan)"""
-    for attempt in range(1, 3):
+    """Xavfsiz, 3 martalik va Google kapcha blokini hisobga oluvchi login qilish"""
+    global LAST_LOGIN_ERROR
+    LAST_LOGIN_ERROR = ""
+    
+    attempt = 1
+    max_attempts = 3
+    captcha_block_count = 0
+
+    while attempt <= max_attempts:
         try:
             page.goto("https://omp.aistudy.uz/auth/login?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded")
             page.wait_for_timeout(2000)
@@ -637,11 +677,39 @@ def perform_safe_login(page, email, password, name="", notify=None):
             time.sleep(0.5)
 
             if notify:
-                notify(f"🎧 [{name}] reCAPTCHA audio Whisper AI orqali yechilmoqda ({attempt}/2)...")
+                notify(f"🎧 [{name}] reCAPTCHA audio Whisper AI orqali yechilmoqda ({attempt}/{max_attempts})...")
 
             # Google reCAPTCHA Whisper AI orqali to'liq yechish
             c_ok = handle_recaptcha(page)
             time.sleep(1)
+
+            # Google kapcha IP bloki ("try again later") tekshiruvi
+            is_blocked = False
+            try:
+                for f in page.frames:
+                    if "bframe" in f.url or "recaptcha" in f.url:
+                        fc = f.content().lower()
+                        if "try again later" in fc or "automated queries" in fc:
+                            is_blocked = True
+                            break
+            except Exception:
+                pass
+
+            if is_blocked:
+                captcha_block_count += 1
+                print(f"[LOGIN RECAPTCHA BLOCK] Google kapcha bloki! Bu urinishga hisoblanmaydi ({captcha_block_count}). Yangi toza IP olinmoqda...", flush=True)
+                if notify:
+                    notify(f"⏳ [{name}] Google kapcha bloki! Yangi toza IP olinmoqda (Urinish kuymaydi: {attempt}/{max_attempts})...")
+                switch_ip()
+                time.sleep(3)
+                continue  # attempt oshmaydi, qayta urinib ko'radi
+
+            if not c_ok:
+                print(f"[LOGIN RECAPTCHA FAIL] Kapcha yechilmadi ({attempt}/{max_attempts})")
+                LAST_LOGIN_ERROR = "Google reCAPTCHA yechilmadi"
+                attempt += 1
+                time.sleep(2)
+                continue
 
             # Agar reload bo'lgan bo'lsa, inputlarni qayta to'ldiramiz
             try:
@@ -665,17 +733,30 @@ def perform_safe_login(page, email, password, name="", notify=None):
 
             if token:
                 print(f"[LOGIN SUCCESS] Tizimga muvaffaqiyatli kirildi ({email})!")
+                LAST_LOGIN_ERROR = ""
                 return token
 
             page_text = page.content().lower()
             if "topilmadi" in page_text or "not found" in page_text or "mavjud emas" in page_text:
                 print(f"[LOGIN NOT FOUND] '{email}' bo'yicha foydalanuvchi topilmadi!")
+                LAST_LOGIN_ERROR = "Foydalanuvchi topilmadi (login mavjud emas)"
+                return None
+            elif "noto'g'ri" in page_text or "xato" in page_text or "invalid" in page_text:
+                print(f"[LOGIN BAD CREDENTIALS] '{email}' parol noto'g'ri!")
+                LAST_LOGIN_ERROR = "Parol noto'g'ri kiritildi"
                 return None
 
+            LAST_LOGIN_ERROR = "Tizimga kirishda token olinmadi"
+            attempt += 1
             time.sleep(1)
         except Exception as el:
             print(f"[LOGIN EXCEPTION] {el}")
+            LAST_LOGIN_ERROR = f"Login jarayonida xatolik: {str(el)[:50]}"
+            attempt += 1
             time.sleep(1)
+
+    if not LAST_LOGIN_ERROR:
+        LAST_LOGIN_ERROR = "3 ta urinishda ham kirib bo'lmadi"
     return None
 
 def recover_and_login_student(page, pnfl, name="", notify=None, default_password="Dilnuraxon2015"):
@@ -1478,17 +1559,7 @@ def login_or_register_single_student(student, update_callback=None):
     notify(f"⏳ [{name}] Jarayon boshlandi ({seria} {number})...")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            channel="chrome",
-            headless=False,
-            args=[
-                "--no-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-features=Translate",
-                "--no-default-browser-check",
-                "--disable-popup-blocking"
-            ]
-        )
+        browser = launch_universal_browser(p, headless=True)
         context = browser.new_context(
             viewport={"width": 1280, "height": 800},
             locale="en-US",
@@ -2141,8 +2212,9 @@ def login_or_register_single_student(student, update_callback=None):
                         "login": target_email,
                         "password": default_password
                     })
-                    notify(f"⚠️ [{name}] '{target_email}' kirib bo'lmadi. Keyingi o'quvchiga o'tilmoqda...")
-                    return False, None, target_email, default_password, "Kirish amalga oshmadi"
+                    fail_msg = f"Kirish amalga oshmadi ({LAST_LOGIN_ERROR})" if LAST_LOGIN_ERROR else "Kirish amalga oshmadi"
+                    notify(f"⚠️ [{name}] '{target_email}' kirib bo'lmadi ({LAST_LOGIN_ERROR or 'Xatolik'}). Keyingi o'quvchiga o'tilmoqda...")
+                    return False, None, target_email, default_password, fail_msg
 
         # Agar token yo'q bo'lsa
         if not token:
@@ -2204,17 +2276,7 @@ def process_single_student(student, update_callback=None):
     notify(f"⏳ [{name}] Jarayon boshlandi ({seria} {number})...")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            channel="chrome",
-            headless=False,
-            args=[
-                "--no-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-features=Translate",
-                "--no-default-browser-check",
-                "--disable-popup-blocking"
-            ]
-        )
+        browser = launch_universal_browser(p, headless=True)
         context = browser.new_context(
             viewport={"width": 1280, "height": 800},
             locale="en-US",
@@ -2860,8 +2922,9 @@ def process_single_student(student, update_callback=None):
                         "login": target_email,
                         "password": default_password
                     })
-                    notify(f"⚠️ [{name}] '{target_email}' kirib bo'lmadi. Keyingi o'quvchiga o'tilmoqda...")
-                    return False, "Kirish amalga oshmadi", target_email, default_password
+                    fail_msg = f"Kirish amalga oshmadi ({LAST_LOGIN_ERROR})" if LAST_LOGIN_ERROR else "Kirish amalga oshmadi"
+                    notify(f"⚠️ [{name}] '{target_email}' kirib bo'lmadi ({LAST_LOGIN_ERROR or 'Xatolik'}). Keyingi o'quvchiga o'tilmoqda...")
+                    return False, fail_msg, target_email, default_password
 
         # Agar token yo'q bo'lsa
         if not token:
