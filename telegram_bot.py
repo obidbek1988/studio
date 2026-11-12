@@ -1820,7 +1820,7 @@ class TelegramBotServer:
         print(f"============================================================")
 
         cloud_start_time = time.time()
-        cloud_max_sec = 5.25 * 3600  # 5 soat 15 daqiqa
+        cloud_max_sec = 5.5 * 3600  # 5 soat 30 daqiqa (330 daqiqa)
         is_cloud = os.environ.get("CLOUD_MODE") == "1" or os.environ.get("GITHUB_ACTIONS") == "true"
 
         # Server qayta yonganda to'xtab qolgan buyurtmani tekshirish va xabar berish

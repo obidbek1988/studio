@@ -102,12 +102,12 @@ jobs:
           start /min "CloudAgent3" cmd /k "set AGENT_ID=Cloud_Agent_3&& set MASTER_URL=http://127.0.0.1:8080&& python cluster_agent.py"
           echo ============================================================
           echo Master Server va 3 ta Virtual Agent ishga tushdi!
-          echo 4 soat (240 daqiqa) doimiy xizmat ko'rsatiladi...
+          echo 5 soat 30 daqiqa (330 daqiqa) doimiy xizmat ko'rsatiladi...
           echo ============================================================
-          for /L %%i in (1,1,240) do (
+          for /L %%i in (1,1,330) do (
               ping 127.0.0.1 -n 60 > nul
           )
-          echo [DRAIN] 4 soat to'ldi. Xavfsiz qayta yoqilishga tayyorlanmoqda...
+          echo [DRAIN] 5 soat 30 daqiqa to'ldi. Xavfsiz qayta yoqilishga tayyorlanmoqda...
 
       - name: Xavfsiz Git Push (Zaxira holati va Avto-Restart)
         if: always()
