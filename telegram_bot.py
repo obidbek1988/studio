@@ -502,6 +502,11 @@ class TelegramBotServer:
 
         # 5. Diskdagi faol buyurtma fayllarini tozalash (Rebootda ham qayta tirilmaydi)
         save_active_order({"status": "CANCELLED"})
+        try:
+            import process_5million_excel
+            process_5million_excel.sync_active_order_to_cloud(state_dict={"status": "CANCELLED"})
+        except Exception:
+            pass
         if ACTIVE_ORDER_FILE.exists():
             try: ACTIVE_ORDER_FILE.unlink()
             except Exception: pass
@@ -619,17 +624,25 @@ class TelegramBotServer:
             order_progress_state["status"] = "Jarayonda ⚙️"
 
             # Faol buyurtma holatini diskda saqlash (Server to'xtasa ham qayta tiklash uchun)
-            save_active_order({
+            order_active_payload = {
                 "chat_id": chat_id,
                 "user_name": user_name,
                 "path": local_file_path,
                 "orig_fname": orig_fname,
                 "status": "PROCESSING",
                 "started_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
+            }
+            save_active_order(order_active_payload)
             try:
                 import shutil
                 shutil.copy2(local_file_path, str(ACTIVE_EXCEL_PATH))
+            except Exception:
+                pass
+
+            # Bulut repoga (studio-core) darhol sinxron qilish (server o'chib yonsa qayta tiklanishi uchun)
+            try:
+                import process_5million_excel
+                process_5million_excel.sync_active_order_to_cloud(local_file_path, order_active_payload)
             except Exception:
                 pass
 
@@ -714,13 +727,19 @@ class TelegramBotServer:
             order_progress_state["success"] = success_cnt
 
             # Buyurtma to'liq yakunlandi
-            save_active_order({
+            completed_payload = {
                 "chat_id": chat_id,
                 "user_name": user_name,
                 "orig_fname": orig_fname,
                 "status": "COMPLETED",
                 "completed_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
+            }
+            save_active_order(completed_payload)
+            try:
+                import process_5million_excel
+                process_5million_excel.sync_active_order_to_cloud(state_dict=completed_payload)
+            except Exception:
+                pass
 
             # Kassaga va hisobotga yozish
             db = load_users_db()
@@ -1804,17 +1823,17 @@ class TelegramBotServer:
         cloud_max_sec = 5.25 * 3600  # 5 soat 15 daqiqa
         is_cloud = os.environ.get("CLOUD_MODE") == "1" or os.environ.get("GITHUB_ACTIONS") == "true"
 
-        if is_cloud:
-            resumed = self.check_and_resume_active_order()
-            if not resumed and self.admin_id:
-                try:
-                    self.send_message(
-                        self.admin_id,
-                        "🚀 <b>Server muvaffaqiyatli qayta yondi!</b>\nBarcha tizimlar tayyor. Yangi Excel faylingizni yuborishingiz mumkin.",
-                        reply_markup=self.get_reply_keyboard(self.admin_id)
-                    )
-                except Exception:
-                    pass
+        # Server qayta yonganda to'xtab qolgan buyurtmani tekshirish va xabar berish
+        resumed = self.check_and_resume_active_order()
+        if not resumed and self.admin_id:
+            try:
+                self.send_message(
+                    self.admin_id,
+                    "🚀 <b>Server muvaffaqiyatli qayta yondi!</b>\nBarcha tizimlar tayyor. Yangi Excel faylingizni yuborishingiz mumkin.",
+                    reply_markup=self.get_reply_keyboard(self.admin_id)
+                )
+            except Exception:
+                pass
 
         while self.is_running:
             # Bulut taymerini tekshirish (o'chishdan 45 daqiqa oldin xavfsiz push va qayta yoqish)

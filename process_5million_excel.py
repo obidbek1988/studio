@@ -95,21 +95,23 @@ def load_students_db():
             print(f"[LOAD DB ERROR] {e}")
     return {}
 
+def get_cloud_sync_token():
+    token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+    if not token:
+        for p in ["token.txt", "../token.txt", "core_temp/token.txt"]:
+            if os.path.exists(p):
+                try:
+                    t = open(p).read().strip()
+                    if t and len(t) > 10:
+                        return t
+                except Exception:
+                    pass
+    return token
+
 def _sync_db_to_cloud_worker(json_text):
     try:
         import os, urllib.request, json, base64
-        token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN") or "ghp_bK01j4mPq8R5A51uNqQzR7e2J9bY4E1z4aZ1"
-        # restart_workflow.py dan ham tokenni olishga harakat qilamiz
-        if not token or len(token) < 20:
-            try:
-                with open("restart_workflow.py", "r", encoding="utf-8") as f:
-                    rw_text = f.read()
-                import re
-                m = re.search(r'ghp_[a-zA-Z0-9]+', rw_text)
-                if m:
-                    token = m.group(0)
-            except Exception:
-                pass
+        token = get_cloud_sync_token()
         if not token:
             return
 
@@ -141,6 +143,63 @@ def _sync_db_to_cloud_worker(json_text):
         print("[CLOUD DB SYNC] students_db.json GitHub-ga real vaqtda saqlandi!", flush=True)
     except Exception as e:
         print(f"[CLOUD DB SYNC ERROR] {e}", flush=True)
+
+def sync_active_order_to_cloud(excel_path=None, state_dict=None):
+    """Faol buyurtma holati va Excel faylini studio-core ga avtomatik sinxron qilish"""
+    def _order_sync_worker():
+        try:
+            import os, urllib.request, json, base64
+            token = get_cloud_sync_token()
+            if not token:
+                return
+
+            # 1. active_order_state.json ni yangilash
+            if state_dict:
+                st_url = "https://api.github.com/repos/obidbek1988/studio-core/contents/active_order_state.json"
+                st_text = json.dumps(state_dict, indent=2, ensure_ascii=False)
+                sha = None
+                try:
+                    r1 = urllib.request.Request(st_url, headers={"Authorization": f"token {token}", "User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(r1) as resp:
+                        sha = json.loads(resp.read().decode()).get("sha")
+                except Exception:
+                    pass
+                put_d = {
+                    "message": f"Sync active_order_state ({state_dict.get('status', 'PROCESSING')})",
+                    "content": base64.b64encode(st_text.encode("utf-8")).decode("utf-8")
+                }
+                if sha:
+                    put_d["sha"] = sha
+                pr1 = urllib.request.Request(st_url, data=json.dumps(put_d).encode("utf-8"), method="PUT", headers={"Authorization": f"token {token}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(pr1):
+                    pass
+
+            # 2. active_order.xlsx ni yangilash
+            if excel_path and os.path.exists(excel_path):
+                ex_url = "https://api.github.com/repos/obidbek1988/studio-core/contents/active_order.xlsx"
+                sha_ex = None
+                try:
+                    r2 = urllib.request.Request(ex_url, headers={"Authorization": f"token {token}", "User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(r2) as resp:
+                        sha_ex = json.loads(resp.read().decode()).get("sha")
+                except Exception:
+                    pass
+                with open(excel_path, "rb") as ef:
+                    ex_bytes = ef.read()
+                put_ex = {
+                    "message": "Sync active_order.xlsx for auto-resume",
+                    "content": base64.b64encode(ex_bytes).decode("utf-8")
+                }
+                if sha_ex:
+                    put_ex["sha"] = sha_ex
+                pr2 = urllib.request.Request(ex_url, data=json.dumps(put_ex).encode("utf-8"), method="PUT", headers={"Authorization": f"token {token}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(pr2):
+                    pass
+                print("[CLOUD ORDER SYNC] active_order.xlsx va state studio-core ga muvaffaqiyatli saqlandi!", flush=True)
+        except Exception as e:
+            print(f"[CLOUD ORDER SYNC ERROR] {e}", flush=True)
+
+    threading.Thread(target=_order_sync_worker, daemon=True).start()
 
 def sync_db_to_cloud_async(db_dict):
     try:
