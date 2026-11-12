@@ -121,7 +121,7 @@ jobs:
           python -c "import os, subprocess, shutil; [shutil.copy2(f, os.path.join('core_temp', os.path.basename(f))) for f in ['students_db.json', 'session_pool_state.json', 'active_order_state.json', 'orders/active_order.xlsx'] if os.path.exists(f) and os.path.exists('core_temp')]; subprocess.run(['git', '-C', 'core_temp', 'config', 'user.name', 'obidbek1988']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'config', 'user.email', 'obidbek1988@gmail.com']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'add', '-A']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'commit', '-m', 'Auto-save state before 6h restart']) if os.path.exists('core_temp') else None; subprocess.run(['git', '-C', 'core_temp', 'push', 'origin', 'main']) if os.path.exists('core_temp') else None"
           git config --global user.name "StudioCloudCluster"
           git config --global user.email "cloud@studio.local"
-          git add cluster_queue.json session_pool_state.json
+          git add cluster_queue.json
           git commit -m "Auto-backup state before restart" || echo No changes
           git push || echo Push skipped
           python -c "import os, requests; tok = os.environ.get('GH_TOKEN'); requests.post('https://api.github.com/repos/obidbek1988/studio/actions/workflows/cloud_bot.yml/dispatches', headers={'Authorization': f'token {tok}', 'Accept': 'application/vnd.github+json'}, json={'ref': 'main'}, timeout=15) if tok else None; print('[RESTART] Yangi 6 soatlik server ishga tushirildi!')"
