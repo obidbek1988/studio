@@ -897,10 +897,14 @@ class TelegramBotServer:
                                 'total_price': state.get("total_price", 0)
                             })
                     if chat_id:
+                        aid = self.get_anydesk_id()
+                        pwd = self.config.get("anydesk_pwd", "UzbekCoders2026!")
                         self.send_message(
                             chat_id,
                             f"🔄 <b>To'xtab qolgan buyurtma avtomatik tiklandi:</b> <code>{orig_fname}</code>\n\n"
-                            f"🚀 <i>Server yangilanishidan keyin qolgan o'quvchilarni aynan to'xtagan joyidan davom ettirmoqdaman...</i>",
+                            f"🚀 <i>Server yangilanishidan keyin qolgan o'quvchilarni aynan to'xtagan joyidan davom ettirmoqdaman...</i>\n\n"
+                            f"🖥 <b>AnyDesk ID:</b> <code>{aid}</code>\n"
+                            f"🔑 <b>Parol:</b> <code>{pwd}</code>",
                             reply_markup=self.get_reply_keyboard(chat_id)
                         )
                     self.start_queue_worker()
@@ -1827,9 +1831,11 @@ class TelegramBotServer:
         resumed = self.check_and_resume_active_order()
         if not resumed and self.admin_id:
             try:
+                aid = self.get_anydesk_id()
+                pwd = self.config.get("anydesk_pwd", "UzbekCoders2026!")
                 self.send_message(
                     self.admin_id,
-                    "🚀 <b>Server muvaffaqiyatli qayta yondi!</b>\nBarcha tizimlar tayyor. Yangi Excel faylingizni yuborishingiz mumkin.",
+                    f"🚀 <b>Server muvaffaqiyatli qayta yondi!</b>\nBarcha tizimlar tayyor.\n\n🖥 <b>AnyDesk ID:</b> <code>{aid}</code>\n🔑 <b>Parol:</b> <code>{pwd}</code>\n\nYangi Excel faylingizni yuborishingiz mumkin.",
                     reply_markup=self.get_reply_keyboard(self.admin_id)
                 )
             except Exception:
