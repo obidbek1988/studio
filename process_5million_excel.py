@@ -1771,8 +1771,20 @@ def login_or_register_single_student(student, update_callback=None):
                     b_input.fill("")
                     b_input.fill(b_formatted)
                     b_input.press("Tab")
-                    page.evaluate("() => { if (document.activeElement) document.activeElement.blur(); }")
-                    time.sleep(1.0)
+
+                    # Sayt Angular formasi to'liq qabul qilishi uchun eventlar beramiz:
+                    page.evaluate("""() => {
+                        ['#seria', '#number', '#birthdate'].forEach(sel => {
+                            const el = document.querySelector(sel) || document.querySelector(`input[formcontrolname='${sel.replace('#', '')}']`);
+                            if (el) {
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        });
+                        if (document.activeElement) document.activeElement.blur();
+                    }""")
+                    time.sleep(1.5)
 
                     # reCAPTCHA ni AI bilan yechish
                     notify(f"🎧 [{name}] reCAPTCHA Whisper AI orqali yechilmoqda ({form_attempt}/3)...")
@@ -1787,19 +1799,33 @@ def login_or_register_single_student(student, update_callback=None):
                         time.sleep(3)
                         continue  # E'tibor bering: form_attempt oshmaydi!
 
-                    time.sleep(1.5)
-                    page.evaluate("""() => {
-                        const btn = document.querySelector('button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Yuborish'));
-                        if (btn) { btn.removeAttribute('disabled'); btn.click(); }
-                    }""")
-                    time.sleep(0.5)
-                    try:
-                        page.locator("button:has-text('Yuborish')").first.click(force=True)
-                    except Exception:
-                        pass
+                    # Kapcha yechilgach, sayt shakli to'liq tayyor bo'lishi uchun 2 soniya sabr qilamiz
+                    time.sleep(2.0)
+                    page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
 
-                    # Davlat bazasidan javob kelishini 25 soniya shoshmasdan kutamiz
-                    for _ in range(25):
+                    # "Yuborish" tugmasini ishonchli, takroriy va sabr bilan bosish:
+                    print("[STEP 1] 'Yuborish' tugmasi faollashtirilib bosilmoqda...", flush=True)
+                    for click_try in range(1, 6):
+                        page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+                        page.evaluate("""() => {
+                            const btn = document.querySelector('button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.includes('Yuborish'));
+                            if (btn) {
+                                btn.removeAttribute('disabled');
+                                btn.classList.remove('p-disabled');
+                                btn.click();
+                            }
+                        }""")
+                        try:
+                            page.locator("button:has-text('Yuborish')").first.click(force=True, timeout=1500)
+                        except Exception:
+                            pass
+                        time.sleep(1.0)
+                        # Agar keyingi bosqich ochilgan bo'lsa yoki server so'rovi ketgan bo'lsa:
+                        if page.locator("input[formcontrolname='username'], input#username, .verification-input, .p-progress-spinner").count() > 0:
+                            break
+
+                    # Davlat bazasidan javob kelishini 45 soniya shoshmasdan kutamiz (sayt sekin ishlaganda ham uzilmaydi):
+                    for _ in range(45):
                         time.sleep(1)
                         content = page.content()
                         u_input = page.locator("input[formcontrolname='username'], input#username")
@@ -2481,8 +2507,20 @@ def process_single_student(student, update_callback=None):
                     b_input.fill("")
                     b_input.fill(b_formatted)
                     b_input.press("Tab")
-                    page.evaluate("() => { if (document.activeElement) document.activeElement.blur(); }")
-                    time.sleep(1.0)
+
+                    # Sayt Angular formasi to'liq qabul qilishi uchun eventlar beramiz:
+                    page.evaluate("""() => {
+                        ['#seria', '#number', '#birthdate'].forEach(sel => {
+                            const el = document.querySelector(sel) || document.querySelector(`input[formcontrolname='${sel.replace('#', '')}']`);
+                            if (el) {
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        });
+                        if (document.activeElement) document.activeElement.blur();
+                    }""")
+                    time.sleep(1.5)
 
                     # reCAPTCHA ni AI bilan yechish
                     notify(f"🎧 [{name}] reCAPTCHA Whisper AI orqali yechilmoqda ({form_attempt}/3)...")
@@ -2497,19 +2535,33 @@ def process_single_student(student, update_callback=None):
                         time.sleep(3)
                         continue  # E'tibor bering: form_attempt oshmaydi!
 
-                    time.sleep(1.5)
-                    page.evaluate("""() => {
-                        const btn = document.querySelector('button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Yuborish'));
-                        if (btn) { btn.removeAttribute('disabled'); btn.click(); }
-                    }""")
-                    time.sleep(0.5)
-                    try:
-                        page.locator("button:has-text('Yuborish')").first.click(force=True)
-                    except Exception:
-                        pass
+                    # Kapcha yechilgach, sayt shakli to'liq tayyor bo'lishi uchun 2 soniya sabr qilamiz
+                    time.sleep(2.0)
+                    page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
 
-                    # Davlat bazasidan javob kelishini 25 soniya shoshmasdan kutamiz
-                    for _ in range(25):
+                    # "Yuborish" tugmasini ishonchli, takroriy va sabr bilan bosish:
+                    print("[STEP 1] 'Yuborish' tugmasi faollashtirilib bosilmoqda...", flush=True)
+                    for click_try in range(1, 6):
+                        page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
+                        page.evaluate("""() => {
+                            const btn = document.querySelector('button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.includes('Yuborish'));
+                            if (btn) {
+                                btn.removeAttribute('disabled');
+                                btn.classList.remove('p-disabled');
+                                btn.click();
+                            }
+                        }""")
+                        try:
+                            page.locator("button:has-text('Yuborish')").first.click(force=True, timeout=1500)
+                        except Exception:
+                            pass
+                        time.sleep(1.0)
+                        # Agar keyingi bosqich ochilgan bo'lsa yoki server so'rovi ketgan bo'lsa:
+                        if page.locator("input[formcontrolname='username'], input#username, .verification-input, .p-progress-spinner").count() > 0:
+                            break
+
+                    # Davlat bazasidan javob kelishini 45 soniya shoshmasdan kutamiz (sayt sekin ishlaganda ham uzilmaydi):
+                    for _ in range(45):
                         time.sleep(1)
                         content = page.content()
                         u_input = page.locator("input[formcontrolname='username'], input#username")
