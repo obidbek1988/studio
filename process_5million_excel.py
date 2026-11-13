@@ -339,13 +339,12 @@ def switch_ip():
     time.sleep(2)
     return True
 
-def launch_universal_browser(p, headless=True):
+def launch_universal_browser(p, headless=False):
     """
     Universal brauzer ochuvchi:
-    1. Yopiq (headless=True) rejimda: ekranda oyna ochilmaydi, orqa fonda tez va jim ishlaydi.
-    2. Universal: agar tizimda Google Chrome bo'lsa 'chrome' kanali bilan ochadi.
-       Agar Google Chrome o'rnatilmagan bo'lsa, avtomatik ravishda standart Playwright Chromium orqali ochadi.
-    3. Windows, noutbuk, VPS va Cloud muhitlarida 100% universal ishlaydi.
+    1. AnyDesk va ekranda jonli ko'rinishi uchun headless=False (Ochiq Google Chrome).
+    2. Agar tizimda Google Chrome bo'lsa 'chrome' kanali bilan ochadi.
+       Agar Google Chrome o'rnatilmagan bo'lsa, standart Playwright Chromium orqali ochadi.
     """
     browser_args = [
         "--no-sandbox",
@@ -355,8 +354,9 @@ def launch_universal_browser(p, headless=True):
         "--disable-popup-blocking",
         "--mute-audio"
     ]
-    env_headless = os.environ.get("HEADLESS", "1").strip().lower()
-    actual_headless = headless if env_headless not in ("0", "false", "no") else False
+    # Agar maxsus HEADLESS=1 berilmasa, har doim EKRANDA OCHIQ (headless=False) ishlaydi:
+    env_headless = os.environ.get("HEADLESS", "0").strip().lower()
+    actual_headless = True if env_headless in ("1", "true", "yes") else False
 
     try:
         return p.chromium.launch(
@@ -1618,7 +1618,7 @@ def login_or_register_single_student(student, update_callback=None):
     notify(f"⏳ [{name}] Jarayon boshlandi ({seria} {number})...")
 
     with sync_playwright() as p:
-        browser = launch_universal_browser(p, headless=True)
+        browser = launch_universal_browser(p, headless=False)
         context = browser.new_context(
             viewport={"width": 1280, "height": 800},
             locale="en-US",
@@ -2335,7 +2335,7 @@ def process_single_student(student, update_callback=None):
     notify(f"⏳ [{name}] Jarayon boshlandi ({seria} {number})...")
 
     with sync_playwright() as p:
-        browser = launch_universal_browser(p, headless=True)
+        browser = launch_universal_browser(p, headless=False)
         context = browser.new_context(
             viewport={"width": 1280, "height": 800},
             locale="en-US",
