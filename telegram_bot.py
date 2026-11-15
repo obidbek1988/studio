@@ -3,7 +3,7 @@
 =============================================================================
 5 MILLION PROMPTER (omp.aistudy.uz) - BOSHQARUVCHI TELEGRAM BOT
 Bot: @Beshmillionagentbot
-Token: 9215921692:AAFscb1vWXl9LMe-IHLo7VZrkLeKL1xJkhQ
+Token: SECURE_GITHUB_SECRET
 =============================================================================
 """
 
