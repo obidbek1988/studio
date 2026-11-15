@@ -77,6 +77,19 @@ def get_candidate_sessions():
 
     return fresh_candidates
 
+def mark_session_unauthorized(session_name):
+    state = load_state()
+    clean = normalize_session_name(session_name)
+    unauth = {normalize_session_name(x) for x in state.get("unauthorized", []) if x}
+    if clean:
+        unauth.add(clean)
+    state["unauthorized"] = sorted(list(unauth))
+    active = normalize_session_name(state.get("active_session"))
+    if not active or active == clean:
+        state["active_session"] = None
+    save_state(state)
+    print(f"[SESSION POOL] Sessiya NOFAOL (unauthorized): {clean} - Ro'yxatdan chetlatildi!", flush=True)
+
 def mark_session_exhausted(session_name, reason="limit_reached"):
     state = load_state()
     clean = normalize_session_name(session_name)
@@ -231,22 +244,27 @@ def fetch_tg_code_from_pool(max_candidates=5):
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s)), s_name)
-                code, status = fut.result(timeout=25.0)
+                code, status = fut.result(timeout=35.0)
 
             if code:
                 phone_display = status if status and status != "ok" else s_name
                 print(f"[SESSION POOL CODE] {phone_display} dan yangi kod olindi: [{code}]", flush=True)
-                # Muvaffaqiyatli sessiyani yozib qo'yamiz va navbatdagisiga o'tamiz
                 state["active_session"] = None
                 record_session_success(s_name)
                 return code, phone_display
+            elif status == "limit_exhausted":
+                print(f"[SESSION POOL] {s_name} botda limitga yetgan, chetlatilmoqda...", flush=True)
+                mark_session_exhausted(s_name, reason="limit_exhausted")
+            elif status == "unauthorized":
+                print(f"[SESSION POOL] {s_name} nofaol sessiya, chetlatilmoqda...", flush=True)
+                mark_session_unauthorized(s_name)
             else:
-                print(f"[SESSION POOL] {s_name} ({status}), sessiyalar ro'yxatidan chetlatilmoqda...", flush=True)
-                # Har qanday muammoli yoki javob bermagan sessiyani darhol chetlatamiz!
-                mark_session_exhausted(s_name, reason=status or "no_code")
+                # no_code yoki bot kechikishi — SESSIYA CHETLATILMAYDI! Sessiya sog'lom!
+                print(f"[SESSION POOL INFO] {s_name}: @aistudy_uz_bot dan yangi kod kelmadi ({status}). Sessiya saqlab qolindi.", flush=True)
         except Exception as ex:
-            print(f"[SESSION POOL ERROR] {s_name}: {ex}", flush=True)
-            mark_session_exhausted(s_name, reason="exception")
+            err_name = type(ex).__name__
+            err_str = f": {ex}" if str(ex) else ""
+            print(f"[SESSION POOL WARNING] {s_name}: Aloqa uzildi yoki taymaut ({err_name}{err_str}). Sessiya saqlab qolindi.", flush=True)
 
     return None, None
 
