@@ -1614,12 +1614,15 @@ def login_or_register_single_student(student, update_callback=None):
         skip_registration = True
         print(f"[DB AUTO-MATCH] {name} ({seria} {number}) bazadan topildi! Login: {target_email}")
 
-    # I-FR bo'lmagan seriyalarni tekshirmasdan darhol o'tkazib yuborish
+    # I-FR yoki Pasport bo'lmagan seriyalarni tekshirmasdan darhol o'tkazib yuborish
     seria_clean = str(seria or "").replace(" ", "").replace("-", "").upper()
-    if not skip_registration and "FR" not in seria_clean:
-        print(f"[SKIP NON-FR] {name} ({seria} {number}): Seriya I-FR emas, tashlab ketildi.")
-        notify(f"⏭ [{name}] Seriya 'I-FR' emas ({seria}) — bazada yo'q deb tashlab ketildi.")
-        return False, None, "", "", "Bazada yo'q (I-FR emas)"
+    is_passport = bool(len(seria_clean) == 2 and seria_clean.isalpha())
+    is_metrika = bool("FR" in seria_clean or any(seria_clean.startswith(r) for r in ["I", "II", "III", "IV", "V"]))
+    is_valid_doc = bool(is_passport or is_metrika)
+    if not skip_registration and not is_valid_doc:
+        print(f"[SKIP INVALID DOC] {name} ({seria} {number}): Seriya I-FR yoki Pasport emas, tashlab ketildi.")
+        notify(f"⏭ [{name}] Seriya 'I-FR' yoki Pasport emas ({seria}) — bazada yo'q deb tashlab ketildi.")
+        return False, None, "", "", "Bazada yo'q (Noto'g'ri seriya)"
 
     notify(f"⏳ [{name}] Jarayon boshlandi ({seria} {number})...")
 
@@ -1744,15 +1747,25 @@ def login_or_register_single_student(student, update_callback=None):
                         is_new_student = True
                         break
 
-                    # 3. Maktab o'quvchilari uchun HAR DOIM "Tug'ilganlik haqida guvohnoma" (Metrika) tanlanadi
-                    page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"], p-tab'));
-                        const metr = btns.find(b => b.textContent && (b.textContent.includes("Tug'ilganlik") || b.textContent.includes('guvohnoma') || b.textContent.includes('Metrika')));
-                        if (metr) {
-                            metr.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                            metr.click();
-                        }
-                    }""")
+                    # 3. Hujjat turini tanlash: Pasport yoki Metrika
+                    if is_passport:
+                        page.evaluate("""() => {
+                            const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"], p-tab'));
+                            const pasp = btns.find(b => b.textContent && b.textContent.trim().toLowerCase().includes('pasport'));
+                            if (pasp) {
+                                pasp.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                                pasp.click();
+                            }
+                        }""")
+                    else:
+                        page.evaluate("""() => {
+                            const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"], p-tab'));
+                            const metr = btns.find(b => b.textContent && (b.textContent.includes("Tug'ilganlik") || b.textContent.includes('guvohnoma') || b.textContent.includes('Metrika')));
+                            if (metr) {
+                                metr.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                                metr.click();
+                            }
+                        }""")
                     time.sleep(1.5)
 
                     # Seriya katakchasi mavjudligini tekshirish
@@ -1864,12 +1877,15 @@ def login_or_register_single_student(student, update_callback=None):
 
                 if has_error:
                     browser.close()
-                    notify(f"❌ [{name}] Metrika davlat bazasida topilmadi ({seria} {number})")
-                    return False, None, "", "", "Metrika davlat bazasida topilmadi (No content)"
+                    doc_label = "Pasport" if is_passport else "Metrika"
+                    notify(f"❌ [{name}] {doc_label} davlat bazasida topilmadi ({seria} {number})")
+                    return False, None, "", "", f"{doc_label} davlat bazasida topilmadi (No content)"
 
                 if is_already_registered:
                     pnfl_matches = re.findall(r'\b\d{14}\b', content)
                     pnfl = pnfl_matches[0] if pnfl_matches else None
+                    if not pnfl and student.get("pnfl"):
+                        pnfl = student.get("pnfl")
                     if not pnfl:
                         try:
                             all_text = page.locator("body").inner_text()
@@ -2357,12 +2373,15 @@ def process_single_student(student, update_callback=None):
         skip_registration = True
         print(f"[DB AUTO-MATCH] {name} ({seria} {number}) bazadan topildi! Login: {target_email}")
 
-    # I-FR bo'lmagan seriyalarni tekshirmasdan darhol o'tkazib yuborish
+    # I-FR yoki Pasport bo'lmagan seriyalarni tekshirmasdan darhol o'tkazib yuborish
     seria_clean = str(seria or "").replace(" ", "").replace("-", "").upper()
-    if not skip_registration and "FR" not in seria_clean:
-        print(f"[SKIP NON-FR] {name} ({seria} {number}): Seriya I-FR emas, tashlab ketildi.")
-        notify(f"⏭ [{name}] Seriya 'I-FR' emas ({seria}) — bazada yo'q deb tashlab ketildi.")
-        return False, "Bazada yo'q (I-FR emas)", "", ""
+    is_passport = bool(len(seria_clean) == 2 and seria_clean.isalpha())
+    is_metrika = bool("FR" in seria_clean or any(seria_clean.startswith(r) for r in ["I", "II", "III", "IV", "V"]))
+    is_valid_doc = bool(is_passport or is_metrika)
+    if not skip_registration and not is_valid_doc:
+        print(f"[SKIP INVALID DOC] {name} ({seria} {number}): Seriya I-FR yoki Pasport emas, tashlab ketildi.")
+        notify(f"⏭ [{name}] Seriya 'I-FR' yoki Pasport emas ({seria}) — bazada yo'q deb tashlab ketildi.")
+        return False, "Bazada yo'q (Noto'g'ri seriya)", "", ""
 
     notify(f"⏳ [{name}] Jarayon boshlandi ({seria} {number})...")
 
@@ -2480,15 +2499,25 @@ def process_single_student(student, update_callback=None):
                         is_new_student = True
                         break
 
-                    # 3. Maktab o'quvchilari uchun HAR DOIM "Tug'ilganlik haqida guvohnoma" (Metrika) tanlanadi
-                    page.evaluate("""() => {
-                        const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"], p-tab'));
-                        const metr = btns.find(b => b.textContent && (b.textContent.includes("Tug'ilganlik") || b.textContent.includes('guvohnoma') || b.textContent.includes('Metrika')));
-                        if (metr) {
-                            metr.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                            metr.click();
-                        }
-                    }""")
+                    # 3. Hujjat turini tanlash: Pasport yoki Metrika
+                    if is_passport:
+                        page.evaluate("""() => {
+                            const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"], p-tab'));
+                            const pasp = btns.find(b => b.textContent && b.textContent.trim().toLowerCase().includes('pasport'));
+                            if (pasp) {
+                                pasp.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                                pasp.click();
+                            }
+                        }""")
+                    else:
+                        page.evaluate("""() => {
+                            const btns = Array.from(document.querySelectorAll('button, .btn-switch, .switch-item, [role="tab"], p-tab'));
+                            const metr = btns.find(b => b.textContent && (b.textContent.includes("Tug'ilganlik") || b.textContent.includes('guvohnoma') || b.textContent.includes('Metrika')));
+                            if (metr) {
+                                metr.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                                metr.click();
+                            }
+                        }""")
                     time.sleep(1.5)
 
                     # Seriya katakchasi mavjudligini tekshirish
@@ -2600,12 +2629,15 @@ def process_single_student(student, update_callback=None):
 
                 if has_error:
                     browser.close()
-                    notify(f"❌ [{name}] Metrika davlat bazasida topilmadi ({seria} {number})")
-                    return False, "Metrika davlat bazasida topilmadi (No content)", "", ""
+                    doc_label = "Pasport" if is_passport else "Metrika"
+                    notify(f"❌ [{name}] {doc_label} davlat bazasida topilmadi ({seria} {number})")
+                    return False, f"{doc_label} davlat bazasida topilmadi (No content)", "", ""
 
                 if is_already_registered:
                     pnfl_matches = re.findall(r'\b\d{14}\b', content)
                     pnfl = pnfl_matches[0] if pnfl_matches else None
+                    if not pnfl and student.get("pnfl"):
+                        pnfl = student.get("pnfl")
                     if not pnfl:
                         try:
                             all_text = page.locator("body").inner_text()
@@ -3145,6 +3177,7 @@ def process_excel_order(excel_path, update_callback=None):
     seria_col = next((idx_c for idx_c, v in enumerate(h_vals, 1) if v and any(x in str(v).lower() for x in ["seriya", "series", "ser"])), 4)
     num_col = next((idx_c for idx_c, v in enumerate(h_vals, 1) if v and any(x in str(v).lower() for x in ["raqam", "number", "num"])), 5)
     sinf_col = next((idx_c for idx_c, v in enumerate(h_vals, 1) if v and any(x in str(v).lower() for x in ["sinf", "class"])), 6)
+    jshshir_col = next((idx_c for idx_c, v in enumerate(h_vals, 1) if v and any(x in str(v).lower() for x in ["jshshir", "pinfl", "pnfl"])), None)
     cert_col = next((idx_c for idx_c, v in enumerate(h_vals, 1) if v and any(x in str(v).lower() for x in ["sertifikat", "cert", "link"])), 7)
     email_col = next((idx_c for idx_c, v in enumerate(h_vals, 1) if v and any(x in str(v).lower() for x in ["email", "login", "foydalanuvchi"])), 8)
     pwd_col = next((idx_c for idx_c, v in enumerate(h_vals, 1) if v and any(x in str(v).lower() for x in ["parol", "password", "kod"])), 9)
@@ -3315,18 +3348,27 @@ def process_excel_order(excel_path, update_callback=None):
                 student["existing_login"] = excel_login
                 student["existing_password"] = excel_pwd
 
+            if jshshir_col:
+                raw_jsh = str(sheet.cell(r, jshshir_col).value or "").strip()
+                digits_jsh = "".join(c for c in raw_jsh if c.isdigit())
+                if len(digits_jsh) == 14:
+                    student["pnfl"] = digits_jsh
+
             seria_clean = str(seria or "").replace(" ", "").replace("-", "").upper()
             has_account = bool(student.get("existing_login") and student.get("existing_password"))
-            if not has_account and "FR" not in seria_clean:
-                print(f"[SKIP NON-FR] {name_val} ({seria} {num}): Seriya I-FR emas, tashlab ketildi.")
-                sheet.cell(r, cert_col).value = "Bazada yo'q (I-FR emas)"
+            is_passport = bool(len(seria_clean) == 2 and seria_clean.isalpha())
+            is_metrika = bool("FR" in seria_clean or any(seria_clean.startswith(r) for r in ["I", "II", "III", "IV", "V"]))
+            is_valid_doc = bool(is_passport or is_metrika)
+            if not has_account and not is_valid_doc:
+                print(f"[SKIP INVALID DOC] {name_val} ({seria} {num}): Seriya I-FR yoki Pasport emas, tashlab ketildi.")
+                sheet.cell(r, cert_col).value = "Bazada yo'q (Noto'g'ri seriya)"
                 sheet.cell(r, time_col).value = "0 soniya (Tashlab ketildi)"
                 with excel_lock:
                     wb.save(excel_path)
                 if update_callback:
                     update_callback(
                         f"{idx_str} ⏭ <b>{name_val}</b> ({seria} {num})\n"
-                        f"⚠️ Seriya 'I-FR' emas ({seria}) — bazada yo'q deb tashlab ketildi."
+                        f"⚠️ Seriya 'I-FR' yoki Pasport emas ({seria}) — bazada yo'q deb tashlab ketildi."
                     )
                 continue
 
