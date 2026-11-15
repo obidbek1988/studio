@@ -208,20 +208,21 @@ async def _fetch_from_one_session(session_name):
                 txt = (m.text or "").strip()
                 txt_low = txt.lower()
 
-                # Agar bot limit yoki taqiq xabari bersa - zudlik bilan sessiyani chetlatamiz!
-                if any(w in txt_low for w in ["limit", "cheklov", "faqat bitta", "bitta telefon", "kechirasiz", "mumkin emas", "qayta urin"]):
-                    print(f"[TG BOT LIMIT DETECTED] ({phone_num}) limitga tushgan: {txt[:60]}", flush=True)
-                    await c.disconnect()
-                    return None, "limit_exhausted"
-
+                # 1. Avval KOD bor-yo'qligini tekshiramiz (agar kod kelsa, darhol olamiz!)
                 m_code = re.search(r'\b(\d{6})\b', txt)
-                if m_code and any(w in txt_low for w in ["verification", "tasdiqlash", "code", "kod", "aistudy"]):
+                if m_code and any(w in txt_low for w in ["verification", "tasdiqlash", "code", "kod", "aistudy", "kodingiz"]):
                     code = m_code.group(1)
                     print(f"\n=======================================================", flush=True)
                     print(f"[TG BOT XABAR] ({phone_num}) dan YANGI kod keldi: [{code}]", flush=True)
                     print(f"=======================================================\n", flush=True)
                     await c.disconnect()
                     return code, phone_num
+
+                # 2. Agar kod bo'lmasa va bot aniq limit/taqiq xabari bergan bo'lsagina chetlatamiz
+                if any(w in txt_low for w in ["limit", "cheklov", "faqat bitta", "bitta telefon", "kechirasiz", "mumkin emas"]):
+                    print(f"[TG BOT LIMIT DETECTED] ({phone_num}) limitga tushgan: {txt[:60]}", flush=True)
+                    await c.disconnect()
+                    return None, "limit_exhausted"
 
         await c.disconnect()
         return None, "no_code"
