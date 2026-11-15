@@ -2235,7 +2235,7 @@ def login_or_register_single_student(student, update_callback=None):
                                 print(f"[INVALID OTP DETECTED] Kod xato yoki eskirgan! Qayta yangi kod olinadi...", flush=True)
                                 break
 
-                            if "cheklangan" in content or "bitta telefon" in content:
+                            if any(w in content for w in ["cheklangan", "bitta telefon", "bitta raqam", "foydalanuvchi ro'yxatga olish"]):
                                 is_limited = True
                                 print(f"[LIMIT DETECTED] {session_used} raqamida cheklov aniqlandi!")
                                 break
@@ -2987,7 +2987,7 @@ def process_single_student(student, update_callback=None):
                                 print(f"[INVALID OTP DETECTED] Kod xato yoki eskirgan! Qayta yangi kod olinadi...", flush=True)
                                 break
 
-                            if "cheklangan" in content or "bitta telefon" in content:
+                            if any(w in content for w in ["cheklangan", "bitta telefon", "bitta raqam", "foydalanuvchi ro'yxatga olish"]):
                                 is_limited = True
                                 print(f"[LIMIT DETECTED] {session_used} raqamida cheklov aniqlandi!")
                                 break
