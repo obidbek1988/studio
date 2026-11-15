@@ -1167,8 +1167,7 @@ class TelegramBotServer:
                         f"💰 Jami to'lov summasi: <b>{total_price:,} so'm</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"💳 <b>To'lov uchun karta:</b>\n"
-                        f"<code>5614 6812 1100 2260</code>\n"
-                        f"👤 QOBILOV OBIDJON\n\n"
+                        f"<code>{self.config.get('card_info') or 'Karta ma`lumoti'}</code>\n\n"
                         f"📸 <i>Iltimos, to'lovni amalga oshirgach, to'lov chekini (skrinshotini) shu yerga rasm sifatida yuboring!</i>\n"
                         f"Administrator to'lovni tasdiqlashi bilanoq buyurtmangiz navbatga qo'yiladi."
                     )
