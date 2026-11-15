@@ -92,7 +92,7 @@ DEFAULT_CONFIG = {
     "admin_id": int(os.environ.get("ADMIN_ID", 6580113791)),
     "admin_username": "@OBIDBEK1988",
     "admin_tg_url": "https://t.me/OBIDBEK1988",
-    "card_info": os.environ.get("CARD_INFO", "5614 6812 1100 2260 (QOBILOV OBIDJON)"),
+    "card_info": os.environ.get("CARD_INFO", ""),
     "anydesk_id": "1873514815",
     "anydesk_pwd": "UzbekCoders2026!",
     "cert_price": 4000,
