@@ -56,13 +56,13 @@ def normalize_birthdate_for_input(raw_bdate):
     if len(parts) == 3:
         p1, p2, p3 = parts[0], parts[1], parts[2]
         # YYYY-MM-DD yoki YYYY.MM.DD (ISO format: 1-o'rinda yil, 2-o'rinda oy, 3-o'rinda kun)
-        if len(p1) == 4 and p1.isdigit() and 1990 <= int(p1) <= 2026:
+        if len(p1) == 4 and p1.isdigit() and 1940 <= int(p1) <= 2026:
             yr = p1
             mon = int(p2)
             day = int(p3)
             return f"{str(day).zfill(2)}/{str(mon).zfill(2)}/{yr}"
         # DD.MM.YYYY yoki DD/MM/YYYY (3-o'rinda yil)
-        elif len(p3) == 4 and p3.isdigit() and 1990 <= int(p3) <= 2026:
+        elif len(p3) == 4 and p3.isdigit() and 1940 <= int(p3) <= 2026:
             yr = p3
             d1, d2 = int(p1), int(p2)
             if d1 > 12 and d2 <= 12:
@@ -77,13 +77,13 @@ def normalize_birthdate_for_input(raw_bdate):
     digits = "".join(c for c in str(raw_bdate) if c.isdigit())
     if len(digits) >= 8:
         # YYYYMMDD...
-        if 1990 <= int(digits[:4]) <= 2026:
+        if 1940 <= int(digits[:4]) <= 2026:
             yr = digits[:4]
             mon = int(digits[4:6])
             day = int(digits[6:8])
             return f"{str(day).zfill(2)}/{str(mon).zfill(2)}/{yr}"
         # DDMMYYYY...
-        elif 1990 <= int(digits[4:8]) <= 2026:
+        elif 1940 <= int(digits[4:8]) <= 2026:
             day = int(digits[:2])
             mon = int(digits[2:4])
             yr = digits[4:8]
@@ -1716,7 +1716,8 @@ def login_or_register_single_student(student, update_callback=None):
                 form_attempt = 1
                 captcha_block_count = 0
                 while form_attempt <= 3 and captcha_block_count < 10:
-                    notify(f"📝 [{name}] Metrika kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
+                    doc_label = "Pasport" if is_passport else "Metrika"
+                    notify(f"📝 [{name}] {doc_label} kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
                     page_loaded = False
                     for g_try in range(1, 4):
                         try:
@@ -1779,11 +1780,15 @@ def login_or_register_single_student(student, update_callback=None):
                         continue
 
                     # Ma'lumotlarni shoshmasdan to'ldirish
-                    cur_bdate = date_variants[0]
+                    cur_bdate = date_variants[form_attempt - 1] if (form_attempt - 1) < len(date_variants) else date_variants[0]
                     seria_elem.fill(seria, timeout=5000)
                     page.locator("input#number, input[formcontrolname='number']").first.fill(number, timeout=5000)
 
                     b_formatted = normalize_birthdate_for_input(cur_bdate)
+                    if (form_attempt - 1) > 0 and cur_bdate != date_variants[0]:
+                        print(f"[DATE SWAP] Kun va oy almashtirib kiritilmoqda: {cur_bdate} -> {b_formatted}", flush=True)
+                        notify(f"🔄 [{name}] Kun va oy almashtirib sinab ko'rilmoqda ({b_formatted})...")
+
                     page.evaluate("document.querySelectorAll('.telegram-popup-overlay, .devtools-overlay, .p-dialog-mask').forEach(e => e.remove());")
                     b_input = page.locator("input#birthdate, input[formcontrolname='birthdate'], input.p-datepicker-input").first
                     b_input.click(force=True)
@@ -2468,7 +2473,8 @@ def process_single_student(student, update_callback=None):
                 form_attempt = 1
                 captcha_block_count = 0
                 while form_attempt <= 3 and captcha_block_count < 10:
-                    notify(f"📝 [{name}] Metrika kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
+                    doc_label = "Pasport" if is_passport else "Metrika"
+                    notify(f"📝 [{name}] {doc_label} kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
                     page_loaded = False
                     for g_try in range(1, 4):
                         try:
@@ -2531,11 +2537,15 @@ def process_single_student(student, update_callback=None):
                         continue
 
                     # Ma'lumotlarni shoshmasdan to'ldirish
-                    cur_bdate = date_variants[0]
+                    cur_bdate = date_variants[form_attempt - 1] if (form_attempt - 1) < len(date_variants) else date_variants[0]
                     seria_elem.fill(seria, timeout=5000)
                     page.locator("input#number, input[formcontrolname='number']").first.fill(number, timeout=5000)
 
                     b_formatted = normalize_birthdate_for_input(cur_bdate)
+                    if (form_attempt - 1) > 0 and cur_bdate != date_variants[0]:
+                        print(f"[DATE SWAP] Kun va oy almashtirib kiritilmoqda: {cur_bdate} -> {b_formatted}", flush=True)
+                        notify(f"🔄 [{name}] Kun va oy almashtirib sinab ko'rilmoqda ({b_formatted})...")
+
                     page.evaluate("document.querySelectorAll('.telegram-popup-overlay, .devtools-overlay, .p-dialog-mask').forEach(e => e.remove());")
                     b_input = page.locator("input#birthdate, input[formcontrolname='birthdate'], input.p-datepicker-input").first
                     b_input.click(force=True)
