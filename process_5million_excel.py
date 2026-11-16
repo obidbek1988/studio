@@ -31,39 +31,31 @@ def get_active_token_workers():
     global CURRENT_ACTIVE_TOKEN_WORKERS
     return CURRENT_ACTIVE_TOKEN_WORKERS
 
-def normalize_birthdate_for_input(raw_bdate):
+def parse_birthdate_parts(raw_bdate):
     """
-    Tug'ilgan sanani 'DD/MM/YYYY' formatiga xatosiz keltirish.
-    Kun, oy va yilni aniq ajratib oladi (hech qachon teskari bo'lmaydi).
-    Har qanday formatni qo'llab-quvvatlaydi:
-    - '2016-04-01 00:00:00' -> '01/04/2016'
-    - '2016-04-01' -> '01/04/2016'
-    - '01.04.2016' -> '01/04/2016'
-    - datetime ob'ektlari -> '01/04/2016'
+    Sanani (day, month, year) ko'rinishida aniq ajratib oladi.
+    Noto'g'ri bo'lsa (None, None, None) qaytaradi.
     """
-    if hasattr(raw_bdate, "strftime"):
-        return raw_bdate.strftime("%d/%m/%Y")
-    
+    if hasattr(raw_bdate, "day") and hasattr(raw_bdate, "month") and hasattr(raw_bdate, "year"):
+        return raw_bdate.day, raw_bdate.month, raw_bdate.year
+        
     s = str(raw_bdate or "").strip()
     if not s:
-        return ""
-    
-    # 1. Vaqt qismini tozalash (masalan ' 00:00:00' yoki 'T00:00:00')
+        return None, None, None
+        
     s = re.sub(r'[\sT]\d{1,2}:\d{1,2}(:\d{1,2})?.*$', '', s).strip()
-    
-    # 2. Ajratuvchilar bilan bo'lingan holat: YYYY-MM-DD yoki DD.MM.YYYY
     parts = [p.strip() for p in re.split(r'[\.\-\/\s]', s) if p.strip()]
     if len(parts) == 3:
         p1, p2, p3 = parts[0], parts[1], parts[2]
-        # YYYY-MM-DD yoki YYYY.MM.DD (ISO format: 1-o'rinda yil, 2-o'rinda oy, 3-o'rinda kun)
+        # YYYY-MM-DD
         if len(p1) == 4 and p1.isdigit() and 1940 <= int(p1) <= 2026:
-            yr = p1
+            yr = int(p1)
             mon = int(p2)
             day = int(p3)
-            return f"{str(day).zfill(2)}/{str(mon).zfill(2)}/{yr}"
-        # DD.MM.YYYY yoki DD/MM/YYYY (3-o'rinda yil)
+            return day, mon, yr
+        # DD.MM.YYYY
         elif len(p3) == 4 and p3.isdigit() and 1940 <= int(p3) <= 2026:
-            yr = p3
+            yr = int(p3)
             d1, d2 = int(p1), int(p2)
             if d1 > 12 and d2 <= 12:
                 day, mon = d1, d2
@@ -71,25 +63,46 @@ def normalize_birthdate_for_input(raw_bdate):
                 day, mon = d2, d1
             else:
                 day, mon = d1, d2
-            return f"{str(day).zfill(2)}/{str(mon).zfill(2)}/{yr}"
+            return day, mon, yr
 
-    # 3. Faqat raqamlar holati (masalan '20160401' yoki '01042016')
     digits = "".join(c for c in str(raw_bdate) if c.isdigit())
     if len(digits) >= 8:
-        # YYYYMMDD...
-        if 1940 <= int(digits[:4]) <= 2026:
-            yr = digits[:4]
-            mon = int(digits[4:6])
-            day = int(digits[6:8])
-            return f"{str(day).zfill(2)}/{str(mon).zfill(2)}/{yr}"
-        # DDMMYYYY...
-        elif 1940 <= int(digits[4:8]) <= 2026:
-            day = int(digits[:2])
-            mon = int(digits[2:4])
-            yr = digits[4:8]
-            return f"{str(day).zfill(2)}/{str(mon).zfill(2)}/{yr}"
+        # 1. DDMMYYYY: birinchi 2 ta (1..31), keyingi 2 ta (1..12), oxirgi 4 ta (1940..2026)
+        if 1940 <= int(digits[4:8]) <= 2026 and 1 <= int(digits[2:4]) <= 12 and 1 <= int(digits[:2]) <= 31:
+            return int(digits[:2]), int(digits[2:4]), int(digits[4:8])
+        # 2. YYYYMMDD: birinchi 4 ta (1940..2026), keyingi 2 ta (1..12), oxirgi 2 ta (1..31)
+        elif 1940 <= int(digits[:4]) <= 2026 and 1 <= int(digits[4:6]) <= 12 and 1 <= int(digits[6:8]) <= 31:
+            return int(digits[6:8]), int(digits[4:6]), int(digits[:4])
             
-    return s
+    return None, None, None
+
+def normalize_birthdate_for_input(raw_bdate):
+    """
+    Tug'ilgan sanani 'DD/MM/YYYY' formatiga xatosiz keltirish.
+    Kun, oy va yilni aniq ajratib oladi (hech qachon teskari bo'lmaydi).
+    """
+    if hasattr(raw_bdate, "strftime"):
+        return raw_bdate.strftime("%d/%m/%Y")
+    day, mon, yr = parse_birthdate_parts(raw_bdate)
+    if day and mon and yr:
+        return f"{day:02d}/{mon:02d}/{yr}"
+    return str(raw_bdate or "").strip()
+
+def get_bdate_variants(raw_bdate):
+    """
+    Tug'ilgan sana variantlarini qaytaradi.
+    Agar kun > 12 bo'lsa, oy bilan almashtirib BO'LMAYDI (chunki 12 dan katta oy mavjud emas).
+    Faqat kun ham, oy ham 1..12 oralig'ida bo'lsa va o'zaro teng bo'lmasa, almashtirish varianti qo'shiladi.
+    """
+    day, mon, yr = parse_birthdate_parts(raw_bdate)
+    if not day or not mon or not yr:
+        s = normalize_birthdate_for_input(raw_bdate)
+        return [s] if s else []
+    primary = f"{day:02d}/{mon:02d}/{yr}"
+    variants = [primary]
+    if 1 <= day <= 12 and 1 <= mon <= 12 and day != mon:
+        variants.append(f"{mon:02d}/{day:02d}/{yr}")
+    return variants
 
 
 def load_students_db():
@@ -1687,11 +1700,7 @@ def login_or_register_single_student(student, update_callback=None):
 
         # 1-BOSQICH: Ro'yxatdan o'tish tekshiruvi (Agar login qilinmagan bo'lsa)
         if not skip_registration and not token:
-            date_variants = [birthdate_digits]
-            if len(birthdate_digits) == 8:
-                swapped = birthdate_digits[2:4] + birthdate_digits[:2] + birthdate_digits[4:]
-                if swapped != birthdate_digits:
-                    date_variants.append(swapped)
+            date_variants = get_bdate_variants(student.get("birthdate_formatted") or student.get("birthdate") or birthdate_digits)
 
             registration_success = False
 
@@ -1786,7 +1795,7 @@ def login_or_register_single_student(student, update_callback=None):
 
                     b_formatted = normalize_birthdate_for_input(cur_bdate)
                     if (form_attempt - 1) > 0 and cur_bdate != date_variants[0]:
-                        print(f"[DATE SWAP] Kun va oy almashtirib kiritilmoqda: {cur_bdate} -> {b_formatted}", flush=True)
+                        print(f"[DATE SWAP] Kun va oy almashtirib kiritilmoqda: {date_variants[0]} -> {b_formatted}", flush=True)
                         notify(f"🔄 [{name}] Kun va oy almashtirib sinab ko'rilmoqda ({b_formatted})...")
 
                     page.evaluate("document.querySelectorAll('.telegram-popup-overlay, .devtools-overlay, .p-dialog-mask').forEach(e => e.remove());")
@@ -2451,11 +2460,7 @@ def process_single_student(student, update_callback=None):
 
         # 1-BOSQICH: Ro'yxatdan o'tish tekshiruvi (Agar login qilinmagan bo'lsa)
         if not skip_registration and not token:
-            date_variants = [birthdate_digits]
-            if len(birthdate_digits) == 8:
-                swapped = birthdate_digits[2:4] + birthdate_digits[:2] + birthdate_digits[4:]
-                if swapped != birthdate_digits:
-                    date_variants.append(swapped)
+            date_variants = get_bdate_variants(student.get("birthdate_formatted") or student.get("birthdate") or birthdate_digits)
 
             registration_success = False
 
@@ -2543,7 +2548,7 @@ def process_single_student(student, update_callback=None):
 
                     b_formatted = normalize_birthdate_for_input(cur_bdate)
                     if (form_attempt - 1) > 0 and cur_bdate != date_variants[0]:
-                        print(f"[DATE SWAP] Kun va oy almashtirib kiritilmoqda: {cur_bdate} -> {b_formatted}", flush=True)
+                        print(f"[DATE SWAP] Kun va oy almashtirib kiritilmoqda: {date_variants[0]} -> {b_formatted}", flush=True)
                         notify(f"🔄 [{name}] Kun va oy almashtirib sinab ko'rilmoqda ({b_formatted})...")
 
                     page.evaluate("document.querySelectorAll('.telegram-popup-overlay, .devtools-overlay, .p-dialog-mask').forEach(e => e.remove());")
