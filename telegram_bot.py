@@ -454,11 +454,11 @@ class TelegramBotServer:
 
         return cleared_count, cleared_size / (1024 * 1024)
 
-    def cancel_and_clean_all(self, chat_id, title="KESH VA BARCHA ESKI BUYURTMALAR TO\'LIQ TOZALANDI!"):
-        """Jarayondagi barcha Excel buyurtmalarni to\'xtatish, diskdan o\'chirish va tizimni 100% tozalash"""
+    def cancel_and_clean_all(self, chat_id, title="KESH VA BARCHA ESKI BUYURTMALAR TO'LIQ TOZALANDI!"):
+        """Jarayondagi barcha Excel buyurtmalarni to'xtatish, diskdan o'chirish va tizimni 100% tozalash"""
         global current_active_order, is_queue_worker_running
         
-        # 1. Bekor qilish flagini yaratish (process_5million_excel buni ko\'rib darhol chiqadi)
+        # 1. Bekor qilish flagini yaratish (process_5million_excel buni ko'rib darhol to'xtaydi)
         cancel_file = BASE_DIR / "cancel_order.flag"
         try:
             cancel_file.touch()
@@ -491,7 +491,7 @@ class TelegramBotServer:
         except Exception:
             pass
 
-        # 4. Brauzer jarayonlarini o\'ldirish
+        # 4. Brauzer jarayonlarini o'ldirish
         try:
             if os.name == "nt":
                 os.system("taskkill /F /IM chrome.exe /IM msedge.exe /T 2>nul")
@@ -502,11 +502,6 @@ class TelegramBotServer:
 
         # 5. Diskdagi faol buyurtma fayllarini tozalash (Rebootda ham qayta tirilmaydi)
         save_active_order({"status": "CANCELLED"})
-        try:
-            import process_5million_excel
-            process_5million_excel.sync_active_order_to_cloud(state_dict={"status": "CANCELLED"})
-        except Exception:
-            pass
         if ACTIVE_ORDER_FILE.exists():
             try: ACTIVE_ORDER_FILE.unlink()
             except Exception: pass
@@ -531,47 +526,49 @@ class TelegramBotServer:
         # 6. Vaqtinchalik audio, rasm va kesh fayllarni tozalash
         cnt, mb = self.clean_cache()
 
-        # 7. Git / core_temp dagi faol buyurtmani ham o\'chirish
-        try:
-            if os.path.exists("core_temp"):
-                c_excel = os.path.join("core_temp", "active_order.xlsx")
-                c_state = os.path.join("core_temp", "active_order_state.json")
-                changed = False
-                if os.path.exists(c_excel):
-                    os.remove(c_excel)
-                    changed = True
-                if os.path.exists(c_state):
-                    with open(c_state, "w", encoding="utf-8") as f:
-                        f.write('{"status": "CANCELLED"}')
-                    changed = True
-                if changed:
-                    import subprocess
-                    subprocess.run(["git", "-C", "core_temp", "config", "user.name", "obidbek1988"], check=False)
-                    subprocess.run(["git", "-C", "core_temp", "config", "user.email", "obidbek1988@gmail.com"], check=False)
-                    subprocess.run(["git", "-C", "core_temp", "add", "-A"], check=False)
-                    subprocess.run(["git", "-C", "core_temp", "commit", "-m", "Clear active order on cancel"], check=False)
-                    subprocess.run(["git", "-C", "core_temp", "push", "origin", "main"], check=False)
-        except Exception as e_c:
-            print(f"[CORE TEMP CLEAN ERROR] {e_c}")
-
-        # 8. Cancel flagini biroz kutib olib tashlash
-        time.sleep(1.0)
-        if cancel_file.exists():
-            try: cancel_file.unlink()
-            except Exception: pass
-
-        # 9. Foydalanuvchiga toza va chiroyli javob
+        # 7. Foydalanuvchiga DARHOL toza va chiroyli javob yuborish
         self.send_message(
             chat_id,
             f"🧹 <b>{title}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🛑 <i>Jarayondagi eski Excel buyurtmasi to\'xtatildi.</i>\n"
-            f"🗑 <i>Eski navbat va fayllar butunlay o\'chirildi ({cnt} ta fayl, {mb:.2f} MB).</i>\n"
+            f"🛑 <i>Jarayondagi barcha ishlar to'xtatildi.</i>\n"
+            f"🗑 <i>Eski navbat va kesh butunlay tozalandi ({cnt} ta fayl, {mb:.2f} MB).</i>\n"
             f"🔄 <i>Server qayta yonsa ham eski faylni qaytarmaydi (100% toza).</i>\n\n"
             f"📥 <b>Yangi Excel faylingizni yuborishingiz mumkin!</b>\n"
             f"Bot yangi faylni darhol qabul qiladi va bajarishni boshlaydi.",
             reply_markup=self.get_reply_keyboard(chat_id)
         )
+
+        # 8. Git / core_temp dagi faol buyurtmani orqa fonda xavfsiz o'chirish (bloklamaydi)
+        def async_git_clean():
+            try:
+                import process_5million_excel
+                process_5million_excel.sync_active_order_to_cloud(state_dict={"status": "CANCELLED"})
+            except Exception:
+                pass
+            try:
+                if os.path.exists("core_temp"):
+                    c_excel = os.path.join("core_temp", "active_order.xlsx")
+                    c_state = os.path.join("core_temp", "active_order_state.json")
+                    changed = False
+                    if os.path.exists(c_excel):
+                        os.remove(c_excel)
+                        changed = True
+                    if os.path.exists(c_state):
+                        with open(c_state, "w", encoding="utf-8") as f:
+                            f.write('{"status": "CANCELLED"}')
+                        changed = True
+                    if changed:
+                        import subprocess
+                        subprocess.run(["git", "-C", "core_temp", "config", "user.name", "obidbek1988"], check=False, timeout=5)
+                        subprocess.run(["git", "-C", "core_temp", "config", "user.email", "obidbek1988@gmail.com"], check=False, timeout=5)
+                        subprocess.run(["git", "-C", "core_temp", "add", "-A"], check=False, timeout=5)
+                        subprocess.run(["git", "-C", "core_temp", "commit", "-m", "Clear active order on cancel"], check=False, timeout=5)
+                        subprocess.run(["git", "-C", "core_temp", "push", "origin", "main"], check=False, timeout=10)
+            except Exception as e_c:
+                print(f"[CORE TEMP CLEAN ERROR] {e_c}")
+
+        threading.Thread(target=async_git_clean, daemon=True).start()
 
     def capture_screenshot(self):
         """Kompyuter ekranidan skrinshot olish"""
@@ -611,6 +608,12 @@ class TelegramBotServer:
         """process_5million_excel.py orqali to'liq avtomatik sertifikat olish jarayoni"""
         global order_progress_state
         try:
+            # Yangi buyurtma boshlanganda bekor qilish bayrog'ini tozalaymiz
+            cancel_file = BASE_DIR / "cancel_order.flag"
+            if cancel_file.exists():
+                try: cancel_file.unlink()
+                except Exception: pass
+
             self.send_message(
                 chat_id,
                 f"🎓 <b>BESH MILLION PROMPTER (omp.aistudy.uz) BUYURTMASI QABUL QILINDI!</b>\n\n"
@@ -1413,7 +1416,7 @@ class TelegramBotServer:
 
         # 4.1. 🛑 Bekor qilish (Otmen) - Barcha buyurtmalarni to'xtatish va tozalash
         t_low = (text or "").lower().strip()
-        if t_low in ("🛑 bekor qilish (otmen)", "🛑 barcha buyurtmalarni bekor qilish (otmen)", "/cancel_all", "/otmen", "/cancel", "otmen", "bekor qilish"):
+        if any(k in t_low for k in ["bekor", "otmen", "cancel"]) or t_low in ("/cancel", "/otmen", "bekor"):
             self.cancel_and_clean_all(chat_id, title="BARCHA BUYURTMALAR TO'LIQ BEKOR QILINDI (OTMEN)!")
             return
 
@@ -1503,7 +1506,7 @@ class TelegramBotServer:
 
         # 7. 🧹 Keshni tozalash (Yangi buyurtma) - Barcha buyurtmalarni to'xtatish, o'chirish va tozalash
         t_low = (text or "").lower().strip()
-        if any(k in t_low for k in ["keshni tozalash", "kesh tozalash", "tozalash"]) or t_low in ("/clear", "/clean", "/kesh", "kesh"):
+        if any(k in t_low for k in ["kesh", "tozala", "clear", "clean"]) or t_low in ("/clear", "/clean", "/kesh"):
             self.cancel_and_clean_all(chat_id, title="KESH VA BARCHA ESKI BUYURTMALAR TO'LIQ TOZALANDI!")
             return
 

@@ -31,6 +31,10 @@ def get_active_token_workers():
     global CURRENT_ACTIVE_TOKEN_WORKERS
     return CURRENT_ACTIVE_TOKEN_WORKERS
 
+def is_order_cancelled():
+    """Foydalanuvchi Telegram botdan 'Bekor qilish' (Otmen) yoki 'Keshni tozalash' bosganini tekshirish"""
+    return (BASE_DIR / "cancel_order.flag").exists()
+
 def parse_birthdate_parts(raw_bdate):
     """
     Sanani (day, month, year) ko'rinishida aniq ajratib oladi.
@@ -1709,6 +1713,13 @@ def login_or_register_single_student(student, update_callback=None):
             # bu hisobga kirmaydi! Sof qotib qolish / harakatsizlik vaqti 180 soniya (3 daqiqa).
             student_idle_start = time.time()
             for student_cycle in range(1, 4):
+                if is_order_cancelled():
+                    print(f"[ORDER CANCELLED] {name} uchun jarayon to'xtatildi (Otmen).", flush=True)
+                    try: page.close()
+                    except Exception: pass
+                    try: browser.close()
+                    except Exception: pass
+                    return False, None, "", "", "Buyurtma bekor qilindi (Otmen)"
                 if registration_success or token:
                     break
                 if time.time() - student_idle_start > 180:
@@ -1725,6 +1736,8 @@ def login_or_register_single_student(student, update_callback=None):
                 form_attempt = 1
                 captcha_block_count = 0
                 while form_attempt <= 3 and captcha_block_count < 10:
+                    if is_order_cancelled():
+                        break
                     doc_label = "Pasport" if is_passport else "Metrika"
                     notify(f"📝 [{name}] {doc_label} kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
                     page_loaded = False
@@ -2487,6 +2500,13 @@ def process_single_student(student, update_callback=None):
 
             # O'quvchini "Try again later" bo'lganda tashlab ketmasdan, 3 martagacha qaytadan boshidan urinish!
             for student_cycle in range(1, 4):
+                if is_order_cancelled():
+                    print(f"[ORDER CANCELLED] {name} uchun jarayon to'xtatildi (Otmen).", flush=True)
+                    try: page.close()
+                    except Exception: pass
+                    try: browser.close()
+                    except Exception: pass
+                    return False, "Buyurtma bekor qilindi (Otmen)", "", ""
                 if registration_success or token:
                     break
 
@@ -2499,6 +2519,8 @@ def process_single_student(student, update_callback=None):
                 form_attempt = 1
                 captcha_block_count = 0
                 while form_attempt <= 3 and captcha_block_count < 10:
+                    if is_order_cancelled():
+                        break
                     doc_label = "Pasport" if is_passport else "Metrika"
                     notify(f"📝 [{name}] {doc_label} kiritilmoqda ({seria} {number}) [Urinish: {student_cycle}.{form_attempt}]...")
                     page_loaded = False
@@ -3326,13 +3348,10 @@ def process_excel_order(excel_path, update_callback=None):
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, PARALLEL_WORKERS)) as executor:
         for idx, r in enumerate(valid_rows, 1):
             # Bekor qilish (Otmen) tekshiruvi:
-            cancel_flag = Path(__file__).resolve().parent / "cancel_order.flag"
-            if cancel_flag.exists():
+            if is_order_cancelled():
                 print("[ORDER CANCELLED] Foydalanuvchi buyurtmani to'xtatdi (Otmen)!", flush=True)
                 if update_callback:
                     update_callback("🛑 Buyurtma to'liq to'xtatildi (Otmen).")
-                try: cancel_flag.unlink()
-                except Exception: pass
                 break
 
             idx_str = f"[{idx}/{total_students}]"
