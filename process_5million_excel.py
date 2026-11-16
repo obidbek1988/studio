@@ -1730,14 +1730,35 @@ def login_or_register_single_student(student, update_callback=None):
                     page_loaded = False
                     for g_try in range(1, 4):
                         try:
+                            if browser is None or not browser.is_connected() or page is None or page.is_closed():
+                                print("[BROWSER RECOVER] Brauzer yopilgan ekan, ekranda yangidan ochilmoqda...", flush=True)
+                                try: context.close()
+                                except Exception: pass
+                                try: browser.close()
+                                except Exception: pass
+                                browser = launch_universal_browser(p, headless=False)
+                                context = browser.new_context(
+                                    viewport={"width": 1280, "height": 800},
+                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                                )
+                                context.add_init_script("""
+                                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                                    window.chrome = { runtime: {} };
+                                """)
+                                context.route("**/chunk-4VTC4MLB.js", lambda route: route.abort())
+                                page = context.new_page()
+
                             page.goto("https://omp.aistudy.uz/auth/register?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded", timeout=30000)
                             time.sleep(2)
                             page_loaded = True
                             break
                         except Exception as eg:
                             print(f"[PAGE GOTO ERROR] {eg}, qayta ochilmoqda ({g_try}/3)...", flush=True)
+                            try: page.close()
+                            except Exception: pass
                             time.sleep(3)
                     if not page_loaded:
+                        form_attempt += 1
                         continue
                     time.sleep(1)
                     page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
@@ -2483,14 +2504,35 @@ def process_single_student(student, update_callback=None):
                     page_loaded = False
                     for g_try in range(1, 4):
                         try:
+                            if browser is None or not browser.is_connected() or page is None or page.is_closed():
+                                print("[BROWSER RECOVER] Brauzer yopilgan ekan, ekranda yangidan ochilmoqda...", flush=True)
+                                try: context.close()
+                                except Exception: pass
+                                try: browser.close()
+                                except Exception: pass
+                                browser = launch_universal_browser(p, headless=False)
+                                context = browser.new_context(
+                                    viewport={"width": 1280, "height": 800},
+                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                                )
+                                context.add_init_script("""
+                                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                                    window.chrome = { runtime: {} };
+                                """)
+                                context.route("**/chunk-4VTC4MLB.js", lambda route: route.abort())
+                                page = context.new_page()
+
                             page.goto("https://omp.aistudy.uz/auth/register?debug_bypass=omp-dev-master-99", wait_until="domcontentloaded", timeout=30000)
                             time.sleep(2)
                             page_loaded = True
                             break
                         except Exception as eg:
                             print(f"[PAGE GOTO ERROR] {eg}, qayta ochilmoqda ({g_try}/3)...", flush=True)
+                            try: page.close()
+                            except Exception: pass
                             time.sleep(3)
                     if not page_loaded:
+                        form_attempt += 1
                         continue
                     time.sleep(1)
                     page.evaluate("document.querySelectorAll('.devtools-overlay, .telegram-popup-overlay, .p-dialog-mask').forEach(e => e.remove());")
