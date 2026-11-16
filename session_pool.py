@@ -40,12 +40,40 @@ def load_state():
         "success_counts": {}
     }
 
+def _async_sync_state_to_gh(state_copy):
+    tok = os.environ.get("GH_TOKEN")
+    if not tok:
+        return
+    try:
+        import requests, base64
+        headers = {'Authorization': f'token {tok}', 'Accept': 'application/vnd.github.v3+json'}
+        r = requests.get('https://api.github.com/repos/obidbek1988/studio-core/contents/session_pool_state.json', headers=headers, timeout=10)
+        if r.status_code == 200:
+            sha = r.json().get('sha')
+            content_bytes = json.dumps(state_copy, indent=2, ensure_ascii=False).encode('utf-8')
+            content_b64 = base64.b64encode(content_bytes).decode('utf-8')
+            requests.put('https://api.github.com/repos/obidbek1988/studio-core/contents/session_pool_state.json', headers=headers, json={
+                'message': 'Auto-sync session pool state (blacklist)',
+                'content': content_b64,
+                'sha': sha,
+                'branch': 'main'
+            }, timeout=10)
+    except Exception:
+        pass
+
 def save_state(state):
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[STATE SAVE ERROR] {e}")
+
+    try:
+        import threading
+        state_copy = json.loads(json.dumps(state))
+        threading.Thread(target=_async_sync_state_to_gh, args=(state_copy,), daemon=True).start()
+    except Exception:
+        pass
 
 def get_candidate_sessions():
     state = load_state()

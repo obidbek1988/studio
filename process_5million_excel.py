@@ -2111,10 +2111,10 @@ def login_or_register_single_student(student, update_callback=None):
                     code = None
                     session_used = None
                     clean_attempts = 0
-                    max_clean_attempts = 2
+                    max_clean_attempts = 3
                     session_rotations = 0
 
-                    while clean_attempts < max_clean_attempts and session_rotations < 3:
+                    while clean_attempts < max_clean_attempts and session_rotations < 25:
                         session_rotations += 1
                         # 1. Agar 'Tasdiqlash kodini qayta yuborish' havolasi chiqib turgan bo'lsa, bosish
                         try:
@@ -2868,10 +2868,10 @@ def process_single_student(student, update_callback=None):
                     code = None
                     session_used = None
                     clean_attempts = 0
-                    max_clean_attempts = 2
+                    max_clean_attempts = 3
                     session_rotations = 0
 
-                    while clean_attempts < max_clean_attempts and session_rotations < 3:
+                    while clean_attempts < max_clean_attempts and session_rotations < 25:
                         session_rotations += 1
                         # 1. Agar 'Tasdiqlash kodini qayta yuborish' havolasi chiqib turgan bo'lsa, bosish
                         try:
