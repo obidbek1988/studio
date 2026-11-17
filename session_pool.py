@@ -124,6 +124,8 @@ def get_candidate_sessions():
     primary = state.get("active_session")
     raw_unauth = state.get("unauthorized", [])
     unauth = {normalize_session_name(x) for x in raw_unauth if x}
+    # 998910448978 har qanday holatda ham qat'iy taqiqlangan!
+    unauth.add("998910448978")
 
     candidates = []
     if primary:
@@ -136,6 +138,10 @@ def get_candidate_sessions():
         clean_s = normalize_session_name(s)
         if clean_s and clean_s not in unauth and clean_s not in candidates:
             candidates.append(clean_s)
+
+    # Agar 998330072869 hali qo'shilmagan bo'lsa va taqiqlanmagan bo'lsa, uni boshiga yoki zaxiraga qo'yish
+    if "998330072869" not in candidates and "998330072869" not in unauth:
+        candidates.insert(0, "998330072869")
 
     # Agar hech qanday sessiya bo'lmasa, zaxira tg_session yoki 998330072869
     if not candidates:
