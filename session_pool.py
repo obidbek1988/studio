@@ -32,8 +32,8 @@ SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 STATE_FILE = os.path.join(BASE_DIR, "session_pool_state.json")
 
 def generate_random_uz_phone():
-    """O'zbekiston prefikslari bo'yicha to'g'ri formatdagi tasodifiy raqam yaratish"""
-    prefix = random.choice(["90", "91", "93", "94", "95", "97", "98", "99", "88", "33"])
+    """O'zbekiston prefikslari bo'yicha to'g'ri formatdagi tasodifiy raqam yaratish (Beeline ustuvor)"""
+    prefix = random.choice(["90", "91", "90", "91", "90", "91", "99", "93", "94", "88", "33"])
     tail = f"{random.randint(1000000, 9999999)}"
     return f"+998{prefix}{tail}"
 
