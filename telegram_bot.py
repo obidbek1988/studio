@@ -880,8 +880,6 @@ class TelegramBotServer:
         Har bir kompyuter o'zining mustaqil Telegram sessiyasiga ega bo'ladi.
         """
         tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-        if not tok:
-            return False, "GH_TOKEN topilmadi"
 
         order_id = f"{int(time.time())}_{random.randint(100, 999)}"
         chat_id = order_info.get("chat_id")
@@ -1131,6 +1129,13 @@ class TelegramBotServer:
 
             if data.startswith("approve_order_") or data.startswith("approve_check_"):
                 uid = int(data.split("_")[-1])
+                # Tugma aylanib turmasligi uchun birinchi soniyadayoq callback'ga javob beramiz va tugmalarni yopamiz
+                try:
+                    self.answer_callback_query(cb_id, "✅ To'lov qabul qilindi! Server yoqilmoqda...", show_alert=False)
+                    self.edit_message(chat_id, msg_id, f"⏳ <b>To'lov tasdiqlanmoqda...</b>\n👤 Mijoz: <code>{uid}</code>\n⚡ Yangi maxsus kompyuter yuklanmoqda...", reply_markup={"inline_keyboard": []})
+                except Exception:
+                    pass
+
                 po = pending_orders.pop(uid, None)
                 save_pending_orders()
                 if not po:
@@ -1145,20 +1150,19 @@ class TelegramBotServer:
                         # studio-core dan API orqali qidirish
                         try:
                             tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-                            if tok:
-                                headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
-                                r_c = requests.get("https://api.github.com/repos/obidbek1988/studio-core/contents/orders", headers=headers, timeout=10)
-                                if r_c.status_code == 200:
-                                    for item in r_c.json():
-                                        if str(uid) in item["name"]:
-                                            f_r = requests.get(item["download_url"], timeout=15)
-                                            loc_p = BASE_DIR / "orders" / item["name"]
-                                            loc_p.parent.mkdir(exist_ok=True)
-                                            with open(loc_p, "wb") as wf:
-                                                wf.write(f_r.content)
-                                            cand.append(loc_p)
-                                            print(f"[RECOVERED FROM GITHUB] {uid} fayli yuklab olindi: {loc_p.name}")
-                                            break
+                            headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
+                            r_c = requests.get("https://api.github.com/repos/obidbek1988/studio-core/contents/orders", headers=headers, timeout=10)
+                            if r_c.status_code == 200:
+                                for item in r_c.json():
+                                    if str(uid) in item["name"]:
+                                        f_r = requests.get(item["download_url"], timeout=15)
+                                        loc_p = BASE_DIR / "orders" / item["name"]
+                                        loc_p.parent.mkdir(exist_ok=True)
+                                        with open(loc_p, "wb") as wf:
+                                            wf.write(f_r.content)
+                                        cand.append(loc_p)
+                                        print(f"[RECOVERED FROM GITHUB] {uid} fayli yuklab olindi: {loc_p.name}")
+                                        break
                         except Exception as e_gh:
                             print(f"[FETCH FROM GH ORDERS ERROR] {e_gh}")
 
@@ -1176,15 +1180,22 @@ class TelegramBotServer:
                         print(f"[RECOVERED ORDER] {uid} uchun diskdagi fayl tiklandi: {cand[0].name}")
 
                 if not po:
-                    self.answer_callback_query(cb_id, "Buyurtma fayli topilmadi!", show_alert=True)
-                    self.send_message(chat_id, f"⚠️ <b>Mijoz (ID: {uid}) buyurtmasi topilmadi.</b>\nFaylni qayta yuborishini so'rang yoki o'zingiz botga Excel faylni yuboring!")
+                    self.edit_message(chat_id, msg_id, f"⚠️ <b>Mijoz (ID: {uid}) buyurtmasi topilmadi.</b>\nFaylni qayta yuborishini so'rang yoki o'zingiz botga Excel faylni yuboring!", reply_markup={"inline_keyboard": []})
                     return
 
                 # HECH QANDAY NAVBAT YO'Q! DARHOL ALOHIDA MUSTAQIL TEZKOR BULUT SERVERI YOQILSIN!
                 ok, sess_assigned = self.dispatch_cloud_order_worker(po)
                 if ok:
-                    self.answer_callback_query(cb_id, f"Yangi Tezkor Server yoqildi! 🚀", show_alert=True)
-                    self.edit_message(chat_id, msg_id, f"🚀 <b>Buyurtma uchun YANGI TEZKOR BULUT SERVERI ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q: Alohida kompyuterda parallel ish boshlandi!")
+                    self.edit_message(
+                        chat_id,
+                        msg_id,
+                        f"🚀 <b>Buyurtma uchun YANGI TEZKOR BULUT SERVERI ishga tushirildi!</b>\n"
+                        f"👤 Mijoz: <code>{uid}</code>\n"
+                        f"📁 Fayl: <b>{po['orig_fname']}</b>\n"
+                        f"📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n"
+                        f"⚡ <b>Navbat yo'q:</b> Alohida kompyuterda parallel ish boshlandi!",
+                        reply_markup={"inline_keyboard": []}
+                    )
                     self.send_message(
                         uid,
                         f"⚡ <b>Buyurtmangiz bo'yicha maxsus TEZKOR SERVERLARIMIZ ish boshladi!</b>\n\n"
@@ -1199,8 +1210,12 @@ class TelegramBotServer:
                     with queue_lock:
                         order_queue.append(po)
                     self.start_queue_worker()
-                    self.answer_callback_query(cb_id, f"Serverda ish boshlandi! 🚀", show_alert=True)
-                    self.edit_message(chat_id, msg_id, f"✅ <b>Buyurtma TASDIQLANDI!</b>\n👤 Mijoz: <code>{uid}</code>\n📁 Fayl: <b>{po['orig_fname']}</b>\n🚀 <b>Serverda ish boshlandi!</b>")
+                    self.edit_message(
+                        chat_id,
+                        msg_id,
+                        f"✅ <b>Buyurtma TASDIQLANDI!</b>\n👤 Mijoz: <code>{uid}</code>\n📁 Fayl: <b>{po['orig_fname']}</b>\n🚀 <b>Serverda ish boshlandi!</b>",
+                        reply_markup={"inline_keyboard": []}
+                    )
                     self.send_message(
                         uid,
                         f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
