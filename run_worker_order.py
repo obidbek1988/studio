@@ -14,6 +14,12 @@ import requests
 import datetime
 from pathlib import Path
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 BASE_DIR = Path(__file__).resolve().parent
 
 def send_telegram_msg(bot_token, chat_id, text):

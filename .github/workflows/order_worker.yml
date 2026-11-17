@@ -91,5 +91,8 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           ADMIN_ID: ${{ secrets.ADMIN_ID }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          PYTHONIOENCODING: "utf-8"
+          PYTHONUTF8: "1"
         run: |
+          chcp 65001 > nul
           python run_worker_order.py --order-id "${{ inputs.order_id }}" --chat-id "${{ inputs.chat_id }}" --user-name "${{ inputs.user_name }}" --service-mode "${{ inputs.service_mode }}" --session-name "${{ inputs.session_name }}" --excel-file "${{ inputs.excel_filename }}"
