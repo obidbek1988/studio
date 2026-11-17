@@ -147,6 +147,8 @@ def main():
     dur_text = f"{dur_min} daqiqa {dur_rem} soniya" if dur_min > 0 else f"{dur_rem} soniya"
 
     # 4. Tayyor Excelni mijozga yuborish
+    clean_base = os.path.splitext(os.path.basename(str(excel_path)))[0].strip()
+    export_fname = f"{clean_base} - Besh Million Prompter Sertifikatlari.xlsx"
     finish_caption = (
         f"🎉 <b>BUYURTMA MUVAFFAQIYATLI YAKUNLANDI!</b>\n\n"
         f"📁 Fayl: <b>{os.path.basename(str(excel_path))}</b>\n"
@@ -155,7 +157,7 @@ def main():
         f"🌟 Xizmat: <b>{srv_title}</b>\n\n"
         f"✅ Barcha o'quvchilar rasmiy havolalari bilan Excel faylga muhrlandi!"
     )
-    send_telegram_doc(bot_token, chat_id, str(excel_path), caption=finish_caption)
+    send_telegram_doc(bot_token, chat_id, str(excel_path), caption=finish_caption, custom_filename=export_fname)
 
     # 5. Adminga hisobot
     if admin_id and admin_id != chat_id:

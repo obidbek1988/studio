@@ -776,9 +776,8 @@ class TelegramBotServer:
                 f"📥 To'ldirilgan va barcha sertifikat havolalari yozilgan Excel fayl quyida yuborilmoqda 👇"
             )
 
-            # Fayl nomiga "Besh Million Prompter Sertifikatlari" qo'shish
-            clean_base = os.path.splitext(orig_fname)[0]
-            clean_base = re.sub(r'^[0-9_]+', '', clean_base).strip(' -_')
+            # Fayl nomiga "Besh Million Prompter Sertifikatlari" qo'shish (Fayl boshidagi barcha raqamlar va harflar to'liq saqlanadi)
+            clean_base = os.path.splitext(orig_fname)[0].strip()
             if not clean_base:
                 clean_base = "Oquvchilar"
             export_fname = f"{clean_base} - Besh Million Prompter Sertifikatlari.xlsx"
