@@ -1180,32 +1180,50 @@ class TelegramBotServer:
                     self.send_message(chat_id, f"⚠️ <b>Mijoz (ID: {uid}) buyurtmasi topilmadi.</b>\nServer qayta yuklangani sababli eski to'lov ma'lumoti xotiradan tozalangan bo'lishi mumkin. Iltimos, mijozdan faylni qayta yuborishini so'rang yoki o'zingiz botga Excel faylni yuboring!")
                     return
 
-                # Navbatda kutdirmaymiz: har bir buyurtma uchun darhol ALOHIDA MUSTAQIL TEZKOR SERVER yoqamiz!
-                ok, sess_assigned = self.dispatch_cloud_order_worker(po)
-                if ok:
-                    self.answer_callback_query(cb_id, f"Yangi Tezkor Server yoqildi! 🚀", show_alert=True)
-                    self.edit_message(chat_id, msg_id, f"🚀 <b>Buyurtma uchun YANGI TEZKOR BULUT SERVERI ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
+                # Agar asosiy server bo'sh bo'lsa: DARHOL SHU SERVERNING O'ZIDA 1 SONIYADA ISH BOSHLANSIN!
+                with queue_lock:
+                    is_idle = (current_active_order is None and len(order_queue) == 0)
+
+                if is_idle:
+                    with queue_lock:
+                        order_queue.append(po)
+                    self.answer_callback_query(cb_id, "Buyurtma tasdiqlandi va ish boshlandi! 🚀", show_alert=True)
+                    self.edit_message(chat_id, msg_id, f"✅ <b>Buyurtma TASDIQLANDI!</b>\n👤 Mijoz: <code>{uid}</code>\n🚀 <b>Asosiy Tezkor Serverda ish boshlandi!</b>")
                     self.send_message(
                         uid,
                         f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
-                        f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI TEZKOR SERVERLARIMIZ ishga tushirildi!</b>\n"
-                        f"📁 Fayl: <b>{po['orig_fname']}</b> ({po['student_cnt']} ta o'quvchi)\n"
-                        f"📱 Mustaqil Telegram sessiyasi: <code>{sess_assigned}</code>\n"
+                        f"🚀 <b>Buyurtmangiz bo'yicha maxsus TEZKOR SERVERLARIMIZ ish boshladi!</b>\n"
+                        f"📁 Fayl: <b>{po['orig_fname']}</b> ({po.get('student_cnt', 26)} ta o'quvchi)\n"
                         f"⚡ Quvvat: <b>15 ta parallel oqim</b>\n\n"
-                        f"<i>(Siz hech qanday navbatda kutmaysiz! Buyurtmangiz to'liq parallel bajarilmoqda)</i>"
+                        f"<i>(Jarayon real vaqtda yangilanadi va yakunlangach tayyor fayl shu yerga yuboriladi)</i>"
                     )
+                    self.start_queue_worker()
                     return
-
-                with queue_lock:
-                    order_queue.append(po)
-                    pos = len(order_queue)
-                    ahead_students = sum(item.get('student_cnt', 0) for item in order_queue[:-1])
-                    if current_active_order:
-                        ahead_students += current_active_order.get('student_cnt', 0)
-                    ahead_minutes = max(1, ahead_students * 1)
-
-                self.answer_callback_query(cb_id, f"Buyurtma #{pos}-o'rinda navbatga qo'yildi! ✅", show_alert=True)
-                self.edit_message(chat_id, msg_id, f"✅ <b>Buyurtma TASDIQLANDI va Navbatga qo'yildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📋 Navbat raqami: <b>#{pos}</b> ({ahead_students} ta bola oldinda)")
+                else:
+                    # Agar asosiy server allaqachon band bo'lsa: Mijoz kutmasligi uchun ALOHIDA YANGI TEZKOR BULUT SERVERI yoqilsin!
+                    ok, sess_assigned = self.dispatch_cloud_order_worker(po)
+                    if ok:
+                        self.answer_callback_query(cb_id, f"Yangi Qo'shimcha Server yoqildi! 🚀", show_alert=True)
+                        self.edit_message(chat_id, msg_id, f"🚀 <b>QO'SHIMCHA TEZKOR BULUT SERVERI ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Asosiy server bandligi sababli alohida serverda parallel ish boshlandi!")
+                        self.send_message(
+                            uid,
+                            f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
+                            f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI TEZKOR SERVERLARIMIZ ishga tushirildi!</b>\n"
+                            f"📁 Fayl: <b>{po['orig_fname']}</b> ({po.get('student_cnt', 26)} ta o'quvchi)\n"
+                            f"📱 Mustaqil Telegram sessiyasi: <code>{sess_assigned}</code>\n"
+                            f"⚡ Quvvat: <b>15 ta parallel oqim</b>\n\n"
+                            f"<i>(Siz hech qanday navbatda kutmaysiz! Buyurtmangiz to'liq parallel bajarilmoqda)</i>"
+                        )
+                        return
+                    else:
+                        with queue_lock:
+                            order_queue.append(po)
+                        pos = len(order_queue)
+                        self.answer_callback_query(cb_id, f"Buyurtma #{pos}-o'rinda navbatga qo'yildi! ✅", show_alert=True)
+                        self.edit_message(chat_id, msg_id, f"✅ <b>Buyurtma TASDIQLANDI va Navbatga qo'yildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📋 Navbat raqami: <b>#{pos}</b>")
+                        self.send_message(uid, f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\nBuyurtmangiz navbatga (#{pos}) qo'yildi.")
+                        self.start_queue_worker()
+                        return
 
                 if pos == 1 and not current_active_order:
                     queue_msg = (
@@ -1388,26 +1406,43 @@ class TelegramBotServer:
                             'total_price': 0,
                             'service_mode': mode
                         }
-                        # Administrator istalgancha bir nechta fayl tashlasa ham NAVBATSIS:
-                        # Har bir fayl uchun alohida MUSTAQIL TEZKOR BULUT SERVERI ishga tushiriladi!
-                        ok, sess_assigned = self.dispatch_cloud_order_worker(adm_order)
-                        if ok:
-                            self.send_message(
-                                chat_id,
-                                f"👑 <b>Administrator buyurtmasi uchun YANGI ALOHIDA TEZKOR SERVER ishga tushirildi!</b>\n\n"
-                                f"📁 Fayl: <b>{orig_fname}</b> ({student_cnt} ta o'quvchi, {srv_label})\n"
-                                f"📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n"
-                                f"🚀 Quvvat: <b>15 ta parallel oqim</b>\n"
-                                f"⚡ <b>Navbat yo'q: Barcha tashlangan fayllar to'liq parallel bajariladi!</b>",
-                                reply_markup=self.get_reply_keyboard(chat_id)
-                            )
-                            return
-                        else:
-                            self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi, {srv_label}). Navbatga qo'yildi va ishga tushmoqda...")
+                        # Agar asosiy server bo'sh bo'lsa, darhol shu yerda boshlansin!
+                        with queue_lock:
+                            is_idle = (current_active_order is None and len(order_queue) == 0)
+
+                        if is_idle:
                             with queue_lock:
                                 order_queue.append(adm_order)
+                            self.send_message(
+                                chat_id,
+                                f"👑 <b>Administrator buyurtmasi qabul qilindi!</b>\n\n"
+                                f"📁 Fayl: <b>{orig_fname}</b> ({student_cnt} ta o'quvchi, {srv_label})\n"
+                                f"🚀 <b>Asosiy Tezkor Serverda ish boshlandi!</b>\n"
+                                f"⚡ Quvvat: <b>15 ta parallel oqim faol!</b>",
+                                reply_markup=self.get_reply_keyboard(chat_id)
+                            )
                             self.start_queue_worker()
                             return
+                        else:
+                            # Asosiy server band bo'lsa, parallel ravishda alohida bulut serveri ishga tushadi!
+                            ok, sess_assigned = self.dispatch_cloud_order_worker(adm_order)
+                            if ok:
+                                self.send_message(
+                                    chat_id,
+                                    f"👑 <b>QO'SHIMCHA TEZKOR BULUT SERVERI ishga tushirildi!</b>\n\n"
+                                    f"📁 Fayl: <b>{orig_fname}</b> ({student_cnt} ta o'quvchi, {srv_label})\n"
+                                    f"📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n"
+                                    f"🚀 Quvvat: <b>15 ta parallel oqim</b>\n"
+                                    f"⚡ <b>Asosiy server band bo'lgani uchun alohida serverda parallel ish boshlandi!</b>",
+                                    reply_markup=self.get_reply_keyboard(chat_id)
+                                )
+                                return
+                            else:
+                                self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi, {srv_label}). Navbatga qo'yildi va ishga tushmoqda...")
+                                with queue_lock:
+                                    order_queue.append(adm_order)
+                                self.start_queue_worker()
+                                return
 
                     # 2. AGAR MIJOZ YUBORGAN BO'LSA:
                     mode = user_selected_service.get(chat_id)
