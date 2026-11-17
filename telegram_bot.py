@@ -15,11 +15,13 @@ import time
 import json
 import queue
 import socket
+import random
 import datetime
 import threading
 import traceback
 import subprocess
 import requests
+from urllib.parse import quote
 from collections import deque
 from pathlib import Path
 import openpyxl
@@ -283,6 +285,19 @@ order_progress_state = {
     "current_student": ""
 }
 
+
+def get_gh_token():
+    tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if tok:
+        return tok.strip()
+    try:
+        out = subprocess.check_output("git config --get remote.origin.url", shell=True).decode()
+        m = re.search(r'//[^:]+:([^@]+)@', out)
+        if m:
+            return m.group(1).strip()
+    except Exception:
+        pass
+    return ""
 
 class TelegramBotServer:
     def __init__(self):
@@ -879,56 +894,60 @@ class TelegramBotServer:
         Yangi buyurtma uchun GitHub Actions da alohida On-Demand Virtual Kompyuter yoqish.
         Har bir kompyuter o'zining mustaqil Telegram sessiyasiga ega bo'ladi.
         """
-        tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-
-        order_id = f"{int(time.time())}_{random.randint(100, 999)}"
-        chat_id = order_info.get("chat_id")
-        user_name = order_info.get("user_name", "Mijoz")
-        service_mode = order_info.get("service_mode", "full_cert")
-        excel_path = order_info.get("path")
-        orig_fname = order_info.get("orig_fname", "Buyurtma.xlsx")
-
-        # 1. Excel faylni studio-core/orders/ papkasiga yuklash (worker uni yuklab olishi uchun)
-        excel_fname = os.path.basename(excel_path)
         try:
-            import base64
-            with open(excel_path, "rb") as ef:
-                b64_content = base64.b64encode(ef.read()).decode("utf-8")
-            headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
-            api_url = f"https://api.github.com/repos/obidbek1988/studio-core/contents/orders/{excel_fname}"
-            r_chk = requests.get(api_url, headers=headers, timeout=10)
-            sha = r_chk.json().get("sha") if r_chk.status_code == 200 else None
-            data = {
-                "message": f"Upload order {excel_fname} for on-demand worker",
-                "content": b64_content,
-                "branch": "main"
-            }
-            if sha: data["sha"] = sha
-            requests.put(api_url, headers=headers, json=data, timeout=15)
-            print(f"[ON-DEMAND] Fayl studio-core ga yuklandi: {excel_fname}")
-        except Exception as e_up:
-            print(f"[ON-DEMAND UPLOAD ERROR] {e_up}")
+            tok = get_gh_token()
+            if not tok:
+                print("[ON-DEMAND ERROR] GitHub Token topilmadi!")
+                return False, "Token topilmadi"
 
-        # 2. Ushbu worker uchun mustaqil sessiyani tanlash (Asosiy 998330072869 yoki tg_session EMAS!)
-        chosen_session = "998910400583"
-        try:
-            import session_pool, random
-            state = session_pool.load_state()
-            valid = state.get("valid_sessions", [])
-            exclude = {"998330072869", "+998330072869", "tg_session", "tg_session.session"}
-            fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude and session_pool.normalize_session_name(s) not in ACTIVE_WORKER_SESSIONS]
-            if not fresh:
-                ACTIVE_WORKER_SESSIONS.clear()
-                fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude]
-            if fresh:
-                chosen_session = random.choice(fresh[:100])
-                ACTIVE_WORKER_SESSIONS.add(session_pool.normalize_session_name(chosen_session))
-            print(f"[ON-DEMAND] Yangi worker uchun mustaqil sessiya tanlandi: {chosen_session}")
-        except Exception as e_ch:
-            print(f"[ON-DEMAND CHOOSE SESSION ERROR] {e_ch}")
+            order_id = f"{int(time.time())}_{random.randint(100, 999)}"
+            chat_id = order_info.get("chat_id")
+            user_name = order_info.get("user_name", "Mijoz")
+            service_mode = order_info.get("service_mode", "full_cert")
+            excel_path = order_info.get("path")
+            orig_fname = order_info.get("orig_fname", "Buyurtma.xlsx")
 
-        # 3. GitHub Actions workflow_dispatch yuborish
-        try:
+            # 1. Excel faylni studio-core/orders/ papkasiga yuklash (worker uni yuklab olishi uchun)
+            excel_fname = os.path.basename(excel_path)
+            try:
+                import base64
+                with open(excel_path, "rb") as ef:
+                    b64_content = base64.b64encode(ef.read()).decode("utf-8")
+                headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
+                encoded_fname = quote(excel_fname)
+                api_url = f"https://api.github.com/repos/obidbek1988/studio-core/contents/orders/{encoded_fname}"
+                r_chk = requests.get(api_url, headers=headers, timeout=10)
+                sha = r_chk.json().get("sha") if r_chk.status_code == 200 else None
+                data = {
+                    "message": f"Upload order {excel_fname} for on-demand worker",
+                    "content": b64_content,
+                    "branch": "main"
+                }
+                if sha: data["sha"] = sha
+                requests.put(api_url, headers=headers, json=data, timeout=15)
+                print(f"[ON-DEMAND] Fayl studio-core ga yuklandi: {excel_fname}")
+            except Exception as e_up:
+                print(f"[ON-DEMAND UPLOAD ERROR] {e_up}")
+
+            # 2. Ushbu worker uchun mustaqil sessiyani tanlash (Asosiy 998330072869 yoki tg_session EMAS!)
+            chosen_session = "998330077824"
+            try:
+                import session_pool
+                state = session_pool.load_state()
+                valid = state.get("valid_sessions", [])
+                exclude = {"998330072869", "+998330072869", "tg_session", "tg_session.session", "998910448978"}
+                fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude and session_pool.normalize_session_name(s) not in ACTIVE_WORKER_SESSIONS]
+                if not fresh:
+                    ACTIVE_WORKER_SESSIONS.clear()
+                    fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude]
+                if fresh:
+                    chosen_session = fresh[0]
+                    ACTIVE_WORKER_SESSIONS.add(session_pool.normalize_session_name(chosen_session))
+                print(f"[ON-DEMAND] Yangi worker uchun mustaqil sessiya tanlandi: {chosen_session}")
+            except Exception as e_ch:
+                print(f"[ON-DEMAND CHOOSE SESSION ERROR] {e_ch}")
+
+            # 3. GitHub Actions workflow_dispatch yuborish
             headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
             dispatch_url = "https://api.github.com/repos/obidbek1988/studio/actions/workflows/order_worker.yml/dispatches"
             payload = {
@@ -950,7 +969,8 @@ class TelegramBotServer:
                 print(f"[ON-DEMAND DISPATCH FAILED] Status: {res.status_code}, Res: {res.text}")
                 return False, res.text
         except Exception as e_d:
-            print(f"[ON-DEMAND DISPATCH ERROR] {e_d}")
+            print(f"[ON-DEMAND DISPATCH CRITICAL ERROR] {e_d}")
+            traceback.print_exc()
             return False, str(e_d)
 
     def start_queue_worker(self):
@@ -1149,7 +1169,7 @@ class TelegramBotServer:
                     if not cand:
                         # studio-core dan API orqali qidirish
                         try:
-                            tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+                            tok = get_gh_token()
                             headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
                             r_c = requests.get("https://api.github.com/repos/obidbek1988/studio-core/contents/orders", headers=headers, timeout=10)
                             if r_c.status_code == 200:
@@ -1184,7 +1204,12 @@ class TelegramBotServer:
                     return
 
                 # HECH QANDAY NAVBAT YO'Q! DARHOL ALOHIDA MUSTAQIL TEZKOR BULUT SERVERI YOQILSIN!
-                ok, sess_assigned = self.dispatch_cloud_order_worker(po)
+                try:
+                    ok, sess_assigned = self.dispatch_cloud_order_worker(po)
+                except Exception as e_disp:
+                    print(f"[DISPATCH CALL ERROR] {e_disp}")
+                    ok = False
+                    sess_assigned = str(e_disp)
                 if ok:
                     self.edit_message(
                         chat_id,
