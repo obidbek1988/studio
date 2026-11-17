@@ -118,20 +118,20 @@ def save_state(state):
 def get_candidate_sessions():
     """
     Aktiv sessiyani birinchi o'ringa qo'yadi.
-    Har bir kompyuter yoki worker o'ziga biriktirilgan mustaqil sessiyadan foydalanadi.
+    Qora ro'yxatga (unauthorized) tushgan sessiyalar (masalan: 998910448978) aslo olinmaydi!
     """
     state = load_state()
     primary = state.get("active_session")
-    candidates = []
-    if primary:
-        clean_p = normalize_session_name(primary)
-        if clean_p:
-            candidates.append(clean_p)
-
-    valid = state.get("valid_sessions", [])
     raw_unauth = state.get("unauthorized", [])
     unauth = {normalize_session_name(x) for x in raw_unauth if x}
 
+    candidates = []
+    if primary:
+        clean_p = normalize_session_name(primary)
+        if clean_p and clean_p not in unauth:
+            candidates.append(clean_p)
+
+    valid = state.get("valid_sessions", [])
     for s in valid:
         clean_s = normalize_session_name(s)
         if clean_s and clean_s not in unauth and clean_s not in candidates:
