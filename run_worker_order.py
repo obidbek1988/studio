@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import json
+import re
 import argparse
 import requests
 import datetime
@@ -93,10 +94,26 @@ def main():
             excel_path = Path(f"core_temp/orders/{excel_file}")
 
     if not excel_path.exists():
+        # Fuzzy fallback: search by chat_id or filename parts in orders/ and core_temp/orders/
+        candidates = []
+        for search_dir in [BASE_DIR / "orders", BASE_DIR, Path("core_temp/orders")]:
+            if search_dir.exists():
+                for f in search_dir.glob("*.xlsx"):
+                    if str(chat_id) in f.name:
+                        candidates.append(f)
+        if candidates:
+            candidates.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            excel_path = candidates[0]
+            print(f"[WORKER] Topilgan eng mos fayl: {excel_path.name}")
+
+    if not excel_path.exists():
         err_msg = f"❌ Buyurtma fayli topilmadi: {excel_file}"
         print(err_msg)
         send_telegram_msg(bot_token, chat_id, err_msg)
         sys.exit(1)
+
+    raw_fname = os.path.basename(str(excel_path))
+    display_fname = re.sub(r"^order_\d+_\d+_", "", raw_fname)
 
     # 2. Sessiyani biriktirish
     if session_name:
@@ -113,13 +130,22 @@ def main():
     srv_title = "To'liq Sertifikat olish" if service_mode == "full_cert" else "Faqat Login-parol olish"
     start_msg = (
         f"⚡ <b>Buyurtmangiz bo'yicha maxsus TEZKOR SERVERLARIMIZ ish boshladi!</b>\n\n"
-        f"📁 Fayl: <b>{os.path.basename(str(excel_path))}</b>\n"
+        f"📁 Fayl: <b>{display_fname}</b>\n"
         f"🌟 Xizmat turi: <b>{srv_title}</b>\n"
         f"📱 Biriktirilgan Sessiya: <code>{session_name}</code>\n"
         f"🚀 Quvvat: <b>15 ta parallel oqim</b>\n\n"
         f"<i>(Jarayon real vaqtda yangilanadi va yakunlangach tayyor fayl shu yerga yuboriladi)</i>"
     )
     send_telegram_msg(bot_token, chat_id, start_msg)
+    if admin_id and admin_id != chat_id:
+        send_telegram_msg(bot_token, admin_id,
+            f"🚀 <b>Yangi Worker ish boshladi!</b>\n"
+            f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+            f"📁 Fayl: <b>{display_fname}</b>\n"
+            f"🌟 Xizmat: <b>{srv_title}</b>\n"
+            f"📱 Sessiya: <code>{session_name}</code>\n"
+            f"⚡ Server: 15 ta parallel oqim faol!"
+        )
 
     # 3. Dvigatelni ishga tushirish
     import process_5million_excel
@@ -130,6 +156,8 @@ def main():
         m_str = str(msg).strip()
         if any(k in m_str for k in ["✅", "⚠️", "📩", "Token olindi", "Buyurtma qabul"]):
             send_telegram_msg(bot_token, chat_id, m_str)
+            if admin_id and admin_id != chat_id and ("yakunlandi" in m_str or "Token olindi" in m_str):
+                send_telegram_msg(bot_token, admin_id, f"👤 [{user_name}]: {m_str}")
 
     start_ts = time.time()
     try:
@@ -153,11 +181,11 @@ def main():
     dur_text = f"{dur_min} daqiqa {dur_rem} soniya" if dur_min > 0 else f"{dur_rem} soniya"
 
     # 4. Tayyor Excelni mijozga yuborish
-    clean_base = os.path.splitext(os.path.basename(str(excel_path)))[0].strip()
+    clean_base = os.path.splitext(display_fname)[0].strip()
     export_fname = f"{clean_base} - Besh Million Prompter Sertifikatlari.xlsx"
     finish_caption = (
         f"🎉 <b>BUYURTMA MUVAFFAQIYATLI YAKUNLANDI!</b>\n\n"
-        f"📁 Fayl: <b>{os.path.basename(str(excel_path))}</b>\n"
+        f"📁 Fayl: <b>{display_fname}</b>\n"
         f"👥 Natija: <b>{success_cnt} / {total_cnt} ta o'quvchi</b>\n"
         f"⏱ Sarflangan vaqt: <b>{dur_text}</b>\n"
         f"🌟 Xizmat: <b>{srv_title}</b>\n\n"
@@ -170,10 +198,10 @@ def main():
         admin_report = (
             f"✅ <b>ON-DEMAND WORKER YAKUNLANDI:</b>\n"
             f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
-            f"📁 Fayl: <code>{os.path.basename(str(excel_path))}</code>\n"
+            f"📁 Fayl: <code>{display_fname}</code>\n"
             f"👥 Natija: <b>{success_cnt}/{total_cnt} ta</b> | Vaqt: {dur_text}\n"
             f"📱 Sessiya: <code>{session_name}</code>\n"
-            f"ℹ️ Virtual Kompyuter o'z vazifasini tugatib o'chmoqda."
+            f"ℹ️ Tezkor Server o'z vazifasini muvaffaqiyatli yakunladi."
         )
         send_telegram_msg(bot_token, admin_id, admin_report)
 
