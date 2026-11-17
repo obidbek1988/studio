@@ -35,6 +35,7 @@ if sys.platform == "win32":
 
 # Global jurnallash (Console jonli log uchun)
 LOG_BUFFER = deque(maxlen=60)
+ACTIVE_WORKER_SESSIONS = set()
 
 class LogInterceptor:
     def __init__(self, original_stream):
@@ -884,9 +885,13 @@ class TelegramBotServer:
             state = session_pool.load_state()
             valid = state.get("valid_sessions", [])
             exclude = {"998330072869", "+998330072869", "tg_session", "tg_session.session"}
-            fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude]
+            fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude and session_pool.normalize_session_name(s) not in ACTIVE_WORKER_SESSIONS]
+            if not fresh:
+                ACTIVE_WORKER_SESSIONS.clear()
+                fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude]
             if fresh:
                 chosen_session = random.choice(fresh[:100])
+                ACTIVE_WORKER_SESSIONS.add(session_pool.normalize_session_name(chosen_session))
             print(f"[ON-DEMAND] Yangi worker uchun mustaqil sessiya tanlandi: {chosen_session}")
         except Exception as e_ch:
             print(f"[ON-DEMAND CHOOSE SESSION ERROR] {e_ch}")
