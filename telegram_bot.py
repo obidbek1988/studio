@@ -840,6 +840,81 @@ class TelegramBotServer:
                 f"<code>{str(e)[:300]}</code>"
             )
 
+    def dispatch_cloud_order_worker(self, order_info):
+        """
+        Yangi buyurtma uchun GitHub Actions da alohida On-Demand Virtual Kompyuter yoqish.
+        Har bir kompyuter o'zining mustaqil Telegram sessiyasiga ega bo'ladi.
+        """
+        tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        if not tok:
+            return False, "GH_TOKEN topilmadi"
+
+        order_id = str(int(time.time()))
+        chat_id = order_info.get("chat_id")
+        user_name = order_info.get("user_name", "Mijoz")
+        service_mode = order_info.get("service_mode", "full_cert")
+        excel_path = order_info.get("path")
+        orig_fname = order_info.get("orig_fname", "Buyurtma.xlsx")
+
+        # 1. Excel faylni studio-core/orders/ papkasiga yuklash (worker uni yuklab olishi uchun)
+        excel_fname = os.path.basename(excel_path)
+        try:
+            import base64
+            with open(excel_path, "rb") as ef:
+                b64_content = base64.b64encode(ef.read()).decode("utf-8")
+            headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
+            api_url = f"https://api.github.com/repos/obidbek1988/studio-core/contents/orders/{excel_fname}"
+            r_chk = requests.get(api_url, headers=headers, timeout=10)
+            sha = r_chk.json().get("sha") if r_chk.status_code == 200 else None
+            data = {
+                "message": f"Upload order {excel_fname} for on-demand worker",
+                "content": b64_content,
+                "branch": "main"
+            }
+            if sha: data["sha"] = sha
+            requests.put(api_url, headers=headers, json=data, timeout=15)
+            print(f"[ON-DEMAND] Fayl studio-core ga yuklandi: {excel_fname}")
+        except Exception as e_up:
+            print(f"[ON-DEMAND UPLOAD ERROR] {e_up}")
+
+        # 2. Ushbu worker uchun mustaqil sessiyani tanlash
+        chosen_session = "998330072869"
+        try:
+            import session_pool
+            candidates = session_pool.get_candidate_sessions()
+            for c in candidates:
+                if c != "998330072869":
+                    chosen_session = c
+                    break
+        except Exception:
+            pass
+
+        # 3. GitHub Actions workflow_dispatch yuborish
+        try:
+            headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
+            dispatch_url = "https://api.github.com/repos/obidbek1988/studio/actions/workflows/order_worker.yml/dispatches"
+            payload = {
+                "ref": "main",
+                "inputs": {
+                    "order_id": order_id,
+                    "chat_id": str(chat_id),
+                    "user_name": str(user_name),
+                    "service_mode": str(service_mode),
+                    "session_name": str(chosen_session),
+                    "excel_filename": str(excel_fname)
+                }
+            }
+            res = requests.post(dispatch_url, headers=headers, json=payload, timeout=15)
+            if res.status_code in (204, 200, 201):
+                print(f"[ON-DEMAND SUCCESS] Yangi Virtual Kompyuter yoqildi! Sessiya: {chosen_session}")
+                return True, chosen_session
+            else:
+                print(f"[ON-DEMAND DISPATCH FAILED] Status: {res.status_code}, Res: {res.text}")
+                return False, res.text
+        except Exception as e_d:
+            print(f"[ON-DEMAND DISPATCH ERROR] {e_d}")
+            return False, str(e_d)
+
     def start_queue_worker(self):
         """Umumiy navbat ishchisi (Navbatdagi buyurtmalarni ketma-ket bittalab bajaruvchi konveyer)"""
         global is_queue_worker_running, current_active_order
@@ -1020,6 +1095,23 @@ class TelegramBotServer:
                     self.answer_callback_query(cb_id, "Buyurtma topilmadi yoki allaqachon navbatga qo'yilgan!", show_alert=True)
                     return
 
+                # Agar asosiy kompyuter band bo'lsa, navbatda kutdirmaymiz: darhol yangi Virtual Kompyuter yoqamiz!
+                if current_active_order is not None:
+                    ok, sess_assigned = self.dispatch_cloud_order_worker(po)
+                    if ok:
+                        self.answer_callback_query(cb_id, f"Yangi Virtual Kompyuter yoqildi! 🚀", show_alert=True)
+                        self.edit_message(chat_id, msg_id, f"🚀 <b>Buyurtma uchun YANGI VIRTUAL KOMPYUTER ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
+                        self.send_message(
+                            uid,
+                            f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
+                            f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI VIRTUAL KOMPYUTER ishga tushirildi!</b>\n"
+                            f"📁 Fayl: <b>{po['orig_fname']}</b> ({po['student_cnt']} ta o'quvchi)\n"
+                            f"📱 Mustaqil Telegram sessiyasi: <code>{sess_assigned}</code>\n"
+                            f"⚡ Quvvat: <b>15 ta parallel oqim</b>\n\n"
+                            f"<i>(Siz hech qanday navbatda kutmaysiz! Buyurtmangiz to'liq parallel bajarilmoqda)</i>"
+                        )
+                        return
+
                 with queue_lock:
                     order_queue.append(po)
                     pos = len(order_queue)
@@ -1199,21 +1291,29 @@ class TelegramBotServer:
                     except Exception as ec:
                         print(f"[STUDENT COUNT CHECK ERROR] {ec}")
 
-                    # 1. AGAR ADMIN YUBORGAN BO'LSA: Darhol navbatga qo'yilib ish boshlanadi!
+                    # 1. AGAR ADMIN YUBORGAN BO'LSA:
                     mode = user_selected_service.get(chat_id, "full_cert")
                     srv_label = "To'liq Sertifikat" if mode == "full_cert" else "Faqat Login-parol"
                     if is_admin:
+                        adm_order = {
+                            'chat_id': chat_id,
+                            'user_name': user_name,
+                            'path': saved_path,
+                            'orig_fname': orig_fname,
+                            'student_cnt': student_cnt,
+                            'total_price': 0,
+                            'service_mode': mode
+                        }
+                        if current_active_order is not None:
+                            # Asosiy kompyuter band! Kutdirmasdan darhol yangi Virtual Kompyuter yoqamiz!
+                            ok, sess_assigned = self.dispatch_cloud_order_worker(adm_order)
+                            if ok:
+                                self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi uchun yangi ALOHIDA Virtual Kompyuter ishga tushirildi!</b> ({student_cnt} ta bola, {srv_label})\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
+                                return
+
                         self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi, {srv_label}). Navbatga qo'yildi va ishga tushmoqda...")
                         with queue_lock:
-                            order_queue.append({
-                                'chat_id': chat_id,
-                                'user_name': user_name,
-                                'path': saved_path,
-                                'orig_fname': orig_fname,
-                                'student_cnt': student_cnt,
-                                'total_price': 0,
-                                'service_mode': mode
-                            })
+                            order_queue.append(adm_order)
                         self.start_queue_worker()
                         return
 

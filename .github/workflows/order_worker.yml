@@ -1,0 +1,95 @@
+name: Studio Order Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      order_id:
+        description: 'Order Unique ID'
+        required: true
+      chat_id:
+        description: 'Client Telegram Chat ID'
+        required: true
+      user_name:
+        description: 'Client Name'
+        required: false
+        default: 'Mijoz'
+      service_mode:
+        description: 'Service Mode (full_cert or login_only)'
+        required: false
+        default: 'full_cert'
+      session_name:
+        description: 'Assigned Telegram Session'
+        required: false
+        default: '998330072869'
+      excel_filename:
+        description: 'Excel Filename'
+        required: true
+
+concurrency:
+  group: order-${{ inputs.order_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  worker-runner:
+    runs-on: windows-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Repositoriyani yuklash
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 ni sozlash
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Kutubxonalarni o'rnatish
+        shell: cmd
+        run: |
+          choco install ffmpeg -y --no-progress
+          python -m pip install --quiet requests openpyxl psutil pillow playwright openai-whisper telethon soundfile SpeechRecognition
+          python -m playwright install chromium
+
+      - name: Private Core va Fayllarni yuklash
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          python -c "import os; tok = os.environ.get('GH_TOKEN', ''); os.system(f'git clone https://x-access-token:{tok}@github.com/obidbek1988/studio-core.git core_temp')"
+          copy /Y core_temp\process_5million_excel.py .
+          copy /Y core_temp\students_db.json .
+          copy /Y core_temp\fetch_tg_code.py .
+          copy /Y core_temp\tg_session.session .
+          copy /Y core_temp\session_pool.py .
+          copy /Y core_temp\session_pool_state.json .
+          if not exist orders mkdir orders
+          if exist core_temp\orders copy /Y core_temp\orders\* orders\
+          python -c "import zipfile, glob, os; [zipfile.ZipFile(z).extractall('.') for z in glob.glob('core_temp/sessions*.zip')]; print(f'[SESSIONS] Jami {len(glob.glob(\"sessions/*.session\"))} ta sessiya xavfsiz ochildi!')"
+
+      - name: Cloudflare WARP o'rnatish va yoqish (Toza IP)
+        continue-on-error: true
+        shell: cmd
+        run: |
+          curl -fsSL "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi" -o warp.msi
+          start /wait msiexec.exe /i warp.msi /quiet /qn /norestart
+          ping 127.0.0.1 -n 12 > nul
+          if exist "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" (
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos registration new || echo Reg done
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos mode warp+doh || echo Mode done
+              "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe" --accept-tos connect || echo Connect done
+              ping 127.0.0.1 -n 6 > nul
+              echo [WARP] Ulandi!
+          )
+
+      - name: Buyurtmani bajarish va mijozga topshirish
+        shell: cmd
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          python run_worker_order.py --order-id "${{ inputs.order_id }}" --chat-id "${{ inputs.chat_id }}" --user-name "${{ inputs.user_name }}" --service-mode "${{ inputs.service_mode }}" --session-name "${{ inputs.session_name }}" --excel-file "${{ inputs.excel_filename }}"
