@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "students_db.json"
 db_lock = threading.Lock()
-PARALLEL_WORKERS = 10
+PARALLEL_WORKERS = 15
 excel_lock = threading.Lock()
 CURRENT_ACTIVE_TOKEN_WORKERS = 0
 
@@ -3244,7 +3244,7 @@ def format_duration(seconds):
 
 
 
-def process_excel_order(excel_path, update_callback=None):
+def process_excel_order(excel_path, update_callback=None, service_mode="full_cert"):
     """Excel faylni qabul qilib, barcha o'quvchilarga sertifikat olib berish (Parallel konveyer bilan)"""
     excel_start_time = time.time()
     wb = openpyxl.load_workbook(excel_path)
@@ -3479,6 +3479,23 @@ def process_excel_order(excel_path, update_callback=None):
                         f"{idx_str} ⚠️ <b>{student['name']}</b>: Olinmadi ({err_msg})\n"
                         f"⏱ <b>Sarflangan vaqt:</b> {st_dur_str}"
                     )
+                continue
+
+            # Agar 'Faqat Login-parol' rejimi bo'lsa, darslarni yopmasdan darhol yakunlaymiz:
+            if service_mode == "login_only":
+                st_dur_str = format_duration(time.time() - student_start_time)
+                with excel_lock:
+                    w = openpyxl.load_workbook(excel_path)
+                    s = w.active
+                    s.cell(r, cert_col).value = "Faqat Login-parol olindi ✅"
+                    if email: s.cell(r, email_col).value = email
+                    if pwd: s.cell(r, pwd_col).value = pwd
+                    s.cell(r, time_col).value = st_dur_str
+                    w.save(excel_path)
+                with worker_lock:
+                    worker_results.append((r, True, "Login-parol tayyor"))
+                if update_callback:
+                    update_callback(f"{idx_str} 🔑 <b>{student['name']}</b>: Ro'yxatdan o'tdi! Login: <code>{email}</code> | Parol: <code>{pwd}</code> ({st_dur_str})")
                 continue
 
             # Login muvaffaqiyatli bo'lsa, darslarni yopish va sertifikat olishni fondagi parallel workerga topshiramiz:

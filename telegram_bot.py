@@ -100,8 +100,10 @@ DEFAULT_CONFIG = {
 }
 
 # Navbat va buyurtmalar xotirasi
-pending_orders = {}  # { chat_id: { 'path': ..., 'orig_fname': ..., 'student_cnt': ..., 'total_price': ..., 'user_name': ... } }
-order_queue = []     # [ { 'chat_id': ..., 'user_name': ..., 'path': ..., 'orig_fname': ..., 'student_cnt': ..., 'total_price': ... } ]
+pending_orders = {}  # { chat_id: { 'path': ..., 'orig_fname': ..., 'student_cnt': ..., 'total_price': ..., 'user_name': ..., 'service_mode': ... } }
+order_queue = []     # [ { 'chat_id': ..., 'user_name': ..., 'path': ..., 'orig_fname': ..., 'student_cnt': ..., 'total_price': ..., 'service_mode': ... } ]
+user_selected_service = {}   # { chat_id: 'full_cert' | 'login_only' }
+unconfirmed_excel_files = {} # { chat_id: { 'saved_path': ..., 'orig_fname': ..., 'student_cnt': ..., 'user_name': ... } }
 is_queue_worker_running = False
 queue_lock = threading.Lock()
 current_active_order = None
@@ -365,6 +367,7 @@ class TelegramBotServer:
             s_btn = "🔒 Server: Faqat Admin" if s_mode == "admin_only" else "🔓 Server: Barchaga Ochiq"
             return {
                 "keyboard": [
+                    [{"text": "🎓 To'liq Sertifikat (3 000 so'm)"}, {"text": "🔑 Faqat Login-parol (2 000 so'm)"}],
                     [{"text": "🛑 Bekor qilish (Otmen)"}, {"text": "🔄 Serverni qayta yoqish (Reboot)"}],
                     [{"text": "⏸ To'xtatish (Pauza)"}, {"text": "▶️ Qolgan joyidan davom ettirish"}],
                     [{"text": s_btn}, {"text": "📸 Kompyuterdan Skrinshot"}],
@@ -380,6 +383,7 @@ class TelegramBotServer:
             }
         return {
             "keyboard": [
+                [{"text": "🎓 To'liq Sertifikat (3 000 so'm)"}, {"text": "🔑 Faqat Login-parol (2 000 so'm)"}],
                 [{"text": "📥 Excel Shablon olish"}, {"text": "📸 To'lov chekini yuborish"}],
                 [{"text": "💰 Rasmiy Narxlar"}, {"text": "👨‍💼 Admin bilan aloqa"}],
             ],
@@ -604,7 +608,7 @@ class TelegramBotServer:
     # =========================================================================
     # 5 MILLION PROMPTER DASTURINI ISHGA TUSHIRISH (PIPELINE)
     # =========================================================================
-    def run_5million_pipeline(self, chat_id, user_name, local_file_path, orig_fname):
+    def run_5million_pipeline(self, chat_id, user_name, local_file_path, orig_fname, service_mode="full_cert"):
         """process_5million_excel.py orqali to'liq avtomatik sertifikat olish jarayoni"""
         global order_progress_state
         try:
@@ -706,7 +710,8 @@ class TelegramBotServer:
             excel_start_ts = time.time()
             res = process_5million_excel.process_excel_order(
                 local_file_path,
-                update_callback=telegram_progress_callback
+                update_callback=telegram_progress_callback,
+                service_mode=service_mode
             )
             if len(res) == 3:
                 success_cnt, total_cnt, duration_sec = res
@@ -864,7 +869,8 @@ class TelegramBotServer:
                             next_order['chat_id'],
                             next_order['user_name'],
                             next_order['path'],
-                            next_order['orig_fname']
+                            next_order['orig_fname'],
+                            service_mode=next_order.get('service_mode', 'full_cert')
                         )
                     except Exception as we:
                         print(f"[QUEUE WORKER ERROR] {we}")
@@ -944,6 +950,67 @@ class TelegramBotServer:
             if data == "refresh_logs":
                 self.answer_callback_query(cb_id, "Loglar yangilandi! ⚡")
                 self.send_live_console_log(chat_id, edit_msg_id=msg_id)
+                return
+
+            if data in ("srv_full_cert", "srv_login_only"):
+                srv_mode = "full_cert" if data == "srv_full_cert" else "login_only"
+                user_selected_service[chat_id] = srv_mode
+                srv_title = "To'liq Sertifikat olish (3 000 so'm)" if srv_mode == "full_cert" else "Faqat Login-parol olish (2 000 so'm)"
+                price_per = 3000 if srv_mode == "full_cert" else 2000
+                self.answer_callback_query(cb_id, f"Tanlandi: {srv_title}")
+
+                unconf = unconfirmed_excel_files.pop(chat_id, None)
+                if unconf:
+                    saved_path = unconf['saved_path']
+                    orig_fname = unconf['orig_fname']
+                    student_cnt = unconf['student_cnt']
+                    u_name = unconf.get('user_name', 'Mijoz')
+                    total_price = student_cnt * price_per
+
+                    pending_orders[chat_id] = {
+                        'chat_id': chat_id,
+                        'user_name': u_name,
+                        'path': saved_path,
+                        'orig_fname': orig_fname,
+                        'student_cnt': student_cnt,
+                        'total_price': total_price,
+                        'service_mode': srv_mode
+                    }
+
+                    card_num = self.config.get('card_info') or 'Karta ma`lumoti'
+                    invoice_msg = (
+                        f"📥 <b>Excel faylingiz qabul qilindi!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📁 Fayl: <b>{orig_fname}</b>\n"
+                        f"👥 O'quvchilar soni: <b>{student_cnt} ta</b>\n"
+                        f"🌟 Xizmat turi: <b>{srv_title}</b>\n"
+                        f"💰 Jami to'lov summasi: <b>{total_price:,} so'm</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"💳 <b>To'lov uchun karta:</b>\n"
+                        f"<code>{card_num}</code>\n"
+                        f"👤 QOBILOV OBIDJON\n\n"
+                        f"📸 <i>Iltimos, to'lovni amalga oshirgach, to'lov chekini shu yerga rasm sifatida yuboring!</i>\n"
+                        f"Administrator tasdiqlashi bilan buyurtmangiz navbatga qo'yiladi."
+                    )
+                    self.send_message(chat_id, invoice_msg, reply_markup=self.get_reply_keyboard(chat_id))
+                    if self.admin_id:
+                        try:
+                            self.send_message(
+                                self.admin_id,
+                                f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n"
+                                f"👤 Mijoz: <b>{u_name}</b> (ID: <code>{chat_id}</code>)\n"
+                                f"📁 Fayl: <code>{orig_fname}</code> ({student_cnt} ta bola)\n"
+                                f"💰 Summa: <b>{total_price:,} so'm</b>\n"
+                                f"ℹ️ To'lov cheki kutilmoqda."
+                            )
+                        except Exception: pass
+                else:
+                    self.send_message(
+                        chat_id,
+                        f"✅ <b>{srv_title} tanlandi!</b>\n\n"
+                        f"📥 Endi o'quvchilar ro'yxati yozilgan <b>Excel (.xlsx) faylingizni yuboring 👇</b>",
+                        reply_markup=self.get_reply_keyboard(chat_id)
+                    )
                 return
 
             if data.startswith("approve_order_"):
@@ -1133,8 +1200,10 @@ class TelegramBotServer:
                         print(f"[STUDENT COUNT CHECK ERROR] {ec}")
 
                     # 1. AGAR ADMIN YUBORGAN BO'LSA: Darhol navbatga qo'yilib ish boshlanadi!
+                    mode = user_selected_service.get(chat_id, "full_cert")
+                    srv_label = "To'liq Sertifikat" if mode == "full_cert" else "Faqat Login-parol"
                     if is_admin:
-                        self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi). Navbatga qo'yildi va ishga tushmoqda...")
+                        self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi, {srv_label}). Navbatga qo'yildi va ishga tushmoqda...")
                         with queue_lock:
                             order_queue.append({
                                 'chat_id': chat_id,
@@ -1142,15 +1211,38 @@ class TelegramBotServer:
                                 'path': saved_path,
                                 'orig_fname': orig_fname,
                                 'student_cnt': student_cnt,
-                                'total_price': 0
+                                'total_price': 0,
+                                'service_mode': mode
                             })
                         self.start_queue_worker()
                         return
 
-                    # 2. AGAR MIJOZ YUBORGAN BO'LSA: Hisob-kitob qilib, to'lov cheki so'raladi!
-                    # Qat'iy tarif: 4 000 so'm (1 ta o'quvchi uchun)
-                    price_per_cert = 4000
+                    # 2. AGAR MIJOZ YUBORGAN BO'LSA:
+                    mode = user_selected_service.get(chat_id)
+                    if not mode:
+                        unconfirmed_excel_files[chat_id] = {
+                            'saved_path': saved_path,
+                            'orig_fname': orig_fname,
+                            'student_cnt': student_cnt,
+                            'user_name': user_name
+                        }
+                        service_markup = {
+                            "inline_keyboard": [
+                                [{"text": "🎓 To'liq Sertifikat (3 000 so'm)", "callback_data": "srv_full_cert"}],
+                                [{"text": "🔑 Faqat Login-parol (2 000 so'm)", "callback_data": "srv_login_only"}]
+                            ]
+                        }
+                        self.send_message(
+                            chat_id,
+                            f"📥 <b>{orig_fname}</b> fayli qabul qilindi ({student_cnt} ta o'quvchi)!\n\n"
+                            f"Iltimos, ushbu fayl uchun qaysi xizmat kerakligini tanlang 👇",
+                            reply_markup=service_markup
+                        )
+                        return
+
+                    price_per_cert = 3000 if mode == "full_cert" else 2000
                     total_price = student_cnt * price_per_cert
+                    srv_title = "To'liq Sertifikat olish (3 000 so'm)" if mode == "full_cert" else "Faqat Login-parol olish (2 000 so'm)"
 
                     pending_orders[chat_id] = {
                         'chat_id': chat_id,
@@ -1158,7 +1250,8 @@ class TelegramBotServer:
                         'path': saved_path,
                         'orig_fname': orig_fname,
                         'student_cnt': student_cnt,
-                        'total_price': total_price
+                        'total_price': total_price,
+                        'service_mode': mode
                     }
 
                     invoice_msg = (
@@ -1166,11 +1259,12 @@ class TelegramBotServer:
                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"📁 Fayl: <b>{orig_fname}</b>\n"
                         f"👥 O'quvchilar soni: <b>{student_cnt} ta</b>\n"
-                        f"💵 Tarif: <b>4 000 so'm</b> (1 ta sertifikat)\n"
+                        f"🌟 Xizmat: <b>{srv_title}</b>\n"
                         f"💰 Jami to'lov summasi: <b>{total_price:,} so'm</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"💳 <b>To'lov uchun karta:</b>\n"
-                        f"<code>{self.config.get('card_info') or 'Karta ma`lumoti'}</code>\n\n"
+                        f"<code>{self.config.get('card_info') or 'Karta ma`lumoti'}</code>\n"
+                        f"👤 QOBILOV OBIDJON\n\n"
                         f"📸 <i>Iltimos, to'lovni amalga oshirgach, to'lov chekini (skrinshotini) shu yerga rasm sifatida yuboring!</i>\n"
                         f"Administrator to'lovni tasdiqlashi bilanoq buyurtmangiz navbatga qo'yiladi."
                     )
@@ -1180,7 +1274,7 @@ class TelegramBotServer:
                         try:
                             self.send_message(
                                 self.admin_id,
-                                f"📥 <b>YANGI EXCEL BUYURTMA KELDI (To'lov kutilmoqda):</b>\n"
+                                f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n"
                                 f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
                                 f"📁 Fayl: <code>{orig_fname}</code>\n"
                                 f"👥 O'quvchilar: <b>{student_cnt} ta</b>\n"
@@ -1306,11 +1400,13 @@ class TelegramBotServer:
             welcome_text = (
                 f"Assalomu alaykum, {greeting_name}! 👋\n\n"
                 f"{server_status_banner}"
-                f"🎓 <b>5 MILLION PROMPTER (omp.aistudy.uz) AVTOMAT TIZIMI</b>\n\n"
-                f"🤖 Ushbu bot orqali o'quvchilaringizning 5 Million Prompter sertifikatlarini "
-                f"to'liq avtomatik, 100% testlarni yechgan holda olishingiz mumkin.\n\n"
-                f"💰 <b>Tarif:</b> <b>4 000 so'm</b> (1 ta sertifikat uchun)\n"
-                f"⚠️ <i>1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.</i>\n\n"
+                f"🎓 <b>\"5 MILLION PROMPTERS\" (omp.aistudy.uz) AQLLI AGENTI</b>\n\n"
+                f"Ushbu aqlli agent orqali maktab o'quvchilarining 5 Million Prompter sertifikatlarini "
+                f"to'liq avtomatik, 100% darslarini yopgan holda rasmiy havolasi bilan olishingiz mumkin.\n\n"
+                f"📌 <b>XIZMATLAR VA TARIFLAR:</b>\n"
+                f"🔹 1. 🔑 <b>Faqat Login-parol olish:</b> <b>2 000 so'm</b> (1 bola uchun)\n"
+                f"🌟 2. 🎓 <b>To'liq Sertifikat olish:</b> <b>3 000 so'm</b> (Barchasi ichida)\n\n"
+                f"👉 <i>Buyurtma berish uchun quyidagi tugmalardan birini tanlang va Excel faylingizni yuboring!</i>\n\n"
                 f"👨‍💻 <b>Administrator:</b> {admin_user}"
             )
             if is_adm:
@@ -1326,6 +1422,30 @@ class TelegramBotServer:
                     print(f"[BANNER ERROR] {eb}")
 
             self.send_message(chat_id, welcome_text, reply_markup=self.get_reply_keyboard(chat_id))
+            return
+
+        # 1.1. XIZMAT TURINI TANLASH TUGMALARI
+        t_low = (text or "").lower().strip()
+        if "to'liq sertifikat" in t_low or "toliq sertifikat" in t_low:
+            user_selected_service[chat_id] = "full_cert"
+            msg_txt = (
+                "🎓 <b>Siz 'To'liq Sertifikat olish' xizmatini tanladingiz!</b>\n\n"
+                "• Ro'yxatdan o'tkazish + 4 ta modul (12 ta dars)ni 100% yopish + Rasmiy sertifikat havolasi (linki).\n"
+                "💰 Narxi: <b>3 000 so'm</b> (1 ta o'quvchi uchun)\n\n"
+                "📥 <b>Endi o'quvchilar ro'yxati yozilgan Excel (.xlsx) faylingizni yuboring 👇</b>"
+            )
+            self.send_message(chat_id, msg_txt, reply_markup=self.get_reply_keyboard(chat_id))
+            return
+
+        if "login-parol" in t_low or "login parol" in t_low:
+            user_selected_service[chat_id] = "login_only"
+            msg_txt = (
+                "🔑 <b>Siz 'Faqat Login-parol olish' xizmatini tanladingiz!</b>\n\n"
+                "• O'quvchini ro'yxatdan o'tkazish va shaxsiy login/parol berish.\n"
+                "💰 Narxi: <b>2 000 so'm</b> (1 ta o'quvchi uchun)\n\n"
+                "📥 <b>Endi o'quvchilar ro'yxati yozilgan Excel (.xlsx) faylingizni yuboring 👇</b>"
+            )
+            self.send_message(chat_id, msg_txt, reply_markup=self.get_reply_keyboard(chat_id))
             return
 
         # 1.5. 🔒/🔓 Server Holati (Faqat Admin boshqaradi)
@@ -1693,15 +1813,20 @@ class TelegramBotServer:
         if text in ("💰 Rasmiy Narxlar", "/narxlar", "/tariflar", "💰 Tariflar", "Tariflar", "💰 Narxlar va 50% Avans"):
             card = self.config.get("card_info")
             msg = (
-                "💰 <b>RASMIY TARIF VA TO'LOV TIZIMI:</b>\n"
+                "💰 <b>RASMIY TARIF VA XIZMATLAR:</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                "• 1 ta sertifikat narxi: <b>4 000 so'm</b> (Qat'iy narx)\n"
-                "⚠️ <b>Cheklov:</b> 1 ta buyurtma uchun maksimal <b>40 ta o'quvchi</b> qabul qilinadi.\n\n"
-                "💳 <b>To'lov tartibi:</b>\n"
-                "To'lov 100% to'liq amalga oshirilib, chek tasdiqlangach, buyurtma avtomatik navbatga qo'yiladi va to'liq yakunlanadi!\n\n"
-                f"🏦 <b>Karta:</b> <code>{card}</code>\n"
+                "🔹 1. 🔑 <b>Faqat Login-parol olish:</b>\n"
+                "   • O'quvchini ro'yxatdan o'tkazish va shaxsiy login/parol berish.\n"
+                "   • Narxi: <b>2 000 so'm</b> (1 ta o'quvchi uchun)\n\n"
+                "🌟 2. 🎓 <b>To'liq Sertifikat olishga yordam berish:</b>\n"
+                "   • Ro'yxatdan o'tkazish + 4 ta modulni 100% yopish;\n"
+                "   • Rasmiy sertifikat havolasi (linki) bilan tayyor Excel berish.\n"
+                "   • Narxi: <b>3 000 so'm</b> (1 ta o'quvchi uchun)\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                "💳 <b>To'lov uchun karta:</b>\n"
+                f"<code>{card}</code>\n"
                 "👤 QOBILOV OBIDJON\n\n"
-                "🔄 <b>100% Kafolat:</b> Tizim barcha o'quvchilarni to'liq sertifikat bilan ta'minlaydi!"
+                "👉 <i>Buyurtma berish uchun xizmat turini tanlab, Excel faylingizni yuboring!</i>"
             )
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return
