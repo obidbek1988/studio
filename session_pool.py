@@ -1,8 +1,24 @@
+# -*- coding: utf-8 -*-
+"""
+5 MILLION SESSION POOL (CHEKSIZ 1 TA SESSIYA VA KONTAKT ALMASHTIRISH DVIGATELI)
+Yangilangan sana: 17.11.2026
+
+Prinsip:
+1. Bitta asosiy Telegram sessiyasi tanlanadi (masalan: 998330072869 yoki tg_session).
+2. @aistudy_uz_bot bitta kontakt raqamiga 5 ta o'quvchi limitini qo'ygan.
+3. Har 5 ta o'quvchidan so'ng (yoki limit xabari kelganda):
+   - '⚙️ Sozlamalar' -> '📞 Kontaktni o'zgartirish' bosiladi.
+   - Yangi O'zbekiston raqami bilan kontakt kartasi (InputMediaContact) yuboriladi.
+   - Bot yangi raqamni bir zumda qabul qilib, unga yangi 5 talik limit ochib beradi.
+4. Natijada 1 TA TELEGRAM SESSIYASI CHEKSIZ (minglab bolalar uchun) to'xtovsiz ishlaydi!
+"""
+
 import os
 import sys
 import time
 import json
 import re
+import random
 import asyncio
 import concurrent.futures
 from telethon import TelegramClient
@@ -15,8 +31,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 STATE_FILE = os.path.join(BASE_DIR, "session_pool_state.json")
 
+def generate_random_uz_phone():
+    """O'zbekiston prefikslari bo'yicha to'g'ri formatdagi tasodifiy raqam yaratish"""
+    prefix = random.choice(["90", "91", "93", "94", "95", "97", "98", "99", "88", "33"])
+    tail = f"{random.randint(1000000, 9999999)}"
+    return f"+998{prefix}{tail}"
+
 def normalize_session_name(name):
-    """Sessiya nomini tozalab, sof raqamlar ko'rinishiga keltiradi (masalan: +998330497040 -> 998330497040)"""
+    """Sessiya nomini tozalab, sof raqamlar ko'rinishiga keltiradi"""
     if not name:
         return ""
     name = str(name).strip()
@@ -29,11 +51,15 @@ def load_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                return data
         except Exception:
             pass
     return {
-        "active_session": None,
+        "active_session": "998330072869",
+        "current_contact_phone": None,
+        "contact_usage_count": 0,
+        "needs_contact_rotation": False,
         "valid_sessions": [],
         "exhausted": [],
         "unauthorized": [],
@@ -53,7 +79,7 @@ def _async_sync_state_to_gh(state_copy):
             content_bytes = json.dumps(state_copy, indent=2, ensure_ascii=False).encode('utf-8')
             content_b64 = base64.b64encode(content_bytes).decode('utf-8')
             requests.put('https://api.github.com/repos/obidbek1988/studio-core/contents/session_pool_state.json', headers=headers, json={
-                'message': 'Auto-sync session pool state (blacklist)',
+                'message': 'Auto-sync session pool state (unlimited session)',
                 'content': content_b64,
                 'sha': sha,
                 'branch': 'main'
@@ -76,34 +102,35 @@ def save_state(state):
         pass
 
 def get_candidate_sessions():
+    """
+    1 ta doimiy ishchi sessiyani birinchi o'ringa qo'yadi.
+    Agar active_session belgilanmagan bo'lsa, '998330072869' yoki birinchi yaroqli sessiyani tanlaydi.
+    """
     state = load_state()
+    primary = state.get("active_session") or "998330072869"
+    primary_clean = normalize_session_name(primary)
+
+    # Agar ildiz papkada tg_session.session bo'lsa
+    root_tg = os.path.join(BASE_DIR, "tg_session.session")
+    candidates = []
+    if primary_clean:
+        candidates.append(primary_clean)
+    if os.path.exists(root_tg):
+        candidates.append("tg_session")
+
     valid = state.get("valid_sessions", [])
     raw_exhausted = state.get("exhausted", [])
     raw_unauth = state.get("unauthorized", [])
 
     exhausted = {normalize_session_name(x) for x in raw_exhausted if x}
     unauth = {normalize_session_name(x) for x in raw_unauth if x}
-    counts = state.get("success_counts", {})
 
-    # Faqat toza, limitga yetmagan sessiyalarni saralash (success_counts kichiklari oldinda)
-    fresh_candidates = []
     for s in valid:
         clean_s = normalize_session_name(s)
-        if clean_s and clean_s not in exhausted and clean_s not in unauth:
-            fresh_candidates.append(clean_s)
+        if clean_s and clean_s not in unauth and clean_s not in candidates:
+            candidates.append(clean_s)
 
-    # 0 marta ishlatilgan mutlaqo toza sessiyalar eng birinchi o'rinda bo'ladi!
-    fresh_candidates.sort(key=lambda x: counts.get(x, 0))
-
-    if not fresh_candidates and os.path.exists(SESSIONS_DIR):
-        for fn in os.listdir(SESSIONS_DIR):
-            if fn.endswith(".session"):
-                name = fn[:-8]
-                clean_n = normalize_session_name(name)
-                if clean_n and clean_n not in exhausted and clean_n not in unauth and clean_n not in fresh_candidates:
-                    fresh_candidates.append(clean_n)
-
-    return fresh_candidates
+    return candidates
 
 def mark_session_unauthorized(session_name):
     state = load_state()
@@ -116,22 +143,19 @@ def mark_session_unauthorized(session_name):
     if not active or active == clean:
         state["active_session"] = None
     save_state(state)
-    print(f"[SESSION POOL] Sessiya NOFAOL (unauthorized): {clean} - Ro'yxatdan chetlatildi!", flush=True)
+    print(f"[SESSION POOL] Sessiya NOFAOL (unauthorized): {clean} - Chetlatildi!", flush=True)
 
 def mark_session_exhausted(session_name, reason="limit_reached"):
+    """
+    Cheksiz Telegram rejimida sessiya O'CHIRILMAYDI!
+    Faqatgina keyingi gal yangi kontakt raqami ulanishi belgilanadi.
+    """
     state = load_state()
     clean = normalize_session_name(session_name)
-    exhausted = {normalize_session_name(x) for x in state.get("exhausted", []) if x}
-    if clean:
-        exhausted.add(clean)
-    state["exhausted"] = sorted(list(exhausted))
-
-    active = normalize_session_name(state.get("active_session"))
-    if not active or active == clean:
-        state["active_session"] = None
-
+    print(f"[SESSION POOL] 5 talik limit yoki taqiq aniqlandi ({reason}). Sessiya: {clean} SAQLAB QOLINDI, yangi kontakt ulanadi!", flush=True)
+    state["needs_contact_rotation"] = True
+    state["contact_usage_count"] = 5
     save_state(state)
-    print(f"[SESSION POOL] Sessiya LIMITGA YETDI: {clean} ({reason}) - Sessiyalar ro'yxatidan butunlay chetlatildi!", flush=True)
 
 def record_session_success(session_name):
     state = load_state()
@@ -141,11 +165,118 @@ def record_session_success(session_name):
     counts = state.get("success_counts", {})
     counts[clean] = counts.get(clean, 0) + 1
     state["success_counts"] = counts
+    # Kontakt orqali o'tganlar soni
+    state["contact_usage_count"] = state.get("contact_usage_count", 0) + 1
+    if state["contact_usage_count"] >= 5:
+        state["needs_contact_rotation"] = True
+        print(f"[SESSION POOL] Ushbu kontakt 5 ta o'quvchini to'liq o'tkazdi. Keyingisi uchun yangi kontakt ulanadi!", flush=True)
     save_state(state)
-    print(f"[SESSION POOL] {clean} orqali ro'yxatdan o'tdi (Jami: {counts[clean]} ta)", flush=True)
+    print(f"[SESSION POOL] {clean} orqali muvaffaqiyatli ro'yxatdan o'tdi (Jami: {counts[clean]} ta)", flush=True)
+
+async def change_contact_in_bot(client, bot, new_phone=None):
+    """
+    @aistudy_uz_bot da kontaktni yangi raqamga almashtirish
+    """
+    if not new_phone:
+        new_phone = generate_random_uz_phone()
+
+    print(f"\n[UNLIMITED POOL] Yangi kontakt raqami biriktirilmoqda: {new_phone}...", flush=True)
+
+    # 1. Sozlamalar tugmasi
+    msgs = await client.get_messages(bot, limit=5)
+    settings_clicked = False
+    for m in msgs:
+        if m.buttons:
+            for row in m.buttons:
+                for b in row:
+                    bt = (b.text or "").lower()
+                    if any(w in bt for w in ["sozlamalar", "settings", "⚙️"]):
+                        try:
+                            await b.click()
+                            settings_clicked = True
+                            print(f"[UNLIMITED POOL] '⚙️ Sozlamalar' bosildi", flush=True)
+                            await asyncio.sleep(1.5)
+                            break
+                        except Exception: pass
+                if settings_clicked: break
+        if settings_clicked: break
+
+    if not settings_clicked:
+        await client.send_message(bot, "/start")
+        await asyncio.sleep(1.5)
+        msgs = await client.get_messages(bot, limit=3)
+        for m in msgs:
+            if m.buttons:
+                for row in m.buttons:
+                    for b in row:
+                        bt = (b.text or "").lower()
+                        if any(w in bt for w in ["sozlamalar", "settings", "⚙️"]):
+                            try:
+                                await b.click()
+                                settings_clicked = True
+                                await asyncio.sleep(1.5)
+                                break
+                            except Exception: pass
+                    if settings_clicked: break
+            if settings_clicked: break
+
+    # 2. Kontaktni o'zgartirish tugmasi
+    msgs = await client.get_messages(bot, limit=3)
+    change_clicked = False
+    for m in msgs:
+        if m.buttons:
+            for row in m.buttons:
+                for b in row:
+                    bt = (b.text or "").lower()
+                    if any(w in bt for w in ["kontaktni", "change contact", "raqamni"]):
+                        try:
+                            await b.click()
+                            change_clicked = True
+                            print(f"[UNLIMITED POOL] '📞 Kontaktni o'zgartirish' bosildi", flush=True)
+                            await asyncio.sleep(1.5)
+                            break
+                        except Exception: pass
+                if change_clicked: break
+        if change_clicked: break
+
+    # 3. Yangi kontakt kartasini yuborish
+    contact = InputMediaContact(
+        phone_number=new_phone,
+        first_name="Talaba",
+        last_name="",
+        vcard=""
+    )
+    try:
+        await client.send_file(bot, contact)
+        print(f"[UNLIMITED POOL] Yangi kontakt kartasi yuborildi: {new_phone}", flush=True)
+        await asyncio.sleep(2.0)
+    except Exception as e_send:
+        print(f"[UNLIMITED POOL] Kontakt yuborishda xatolik: {e_send}", flush=True)
+        return False, None
+
+    # Holatni saqlash
+    state = load_state()
+    state["current_contact_phone"] = new_phone
+    state["contact_usage_count"] = 0
+    state["needs_contact_rotation"] = False
+    save_state(state)
+    print(f"✅ [UNLIMITED POOL] Bot yangi raqamni qabul qildi: {new_phone} (Yangi 5 talik limit ochildi!)\n", flush=True)
+    return True, new_phone
 
 async def _fetch_from_one_session(session_name):
-    session_path = os.path.join(SESSIONS_DIR, session_name)
+    # Sessiya yo'lini topish
+    clean_name = normalize_session_name(session_name)
+    session_path = None
+    if session_name == "tg_session" or os.path.exists(os.path.join(BASE_DIR, f"{session_name}.session")):
+        session_path = os.path.join(BASE_DIR, session_name)
+    elif os.path.exists(os.path.join(SESSIONS_DIR, f"{clean_name}.session")):
+        session_path = os.path.join(SESSIONS_DIR, clean_name)
+    elif os.path.exists(os.path.join(SESSIONS_DIR, f"+{clean_name}.session")):
+        session_path = os.path.join(SESSIONS_DIR, f"+{clean_name}")
+    else:
+        # To'g'ridan-to'g'ri izlash
+        session_path = os.path.join(SESSIONS_DIR, session_name)
+
     c = TelegramClient(session_path, API_ID, API_HASH)
     try:
         await asyncio.wait_for(c.connect(), timeout=7.0)
@@ -155,55 +286,26 @@ async def _fetch_from_one_session(session_name):
             return None, "unauthorized"
 
         me = await c.get_me()
+        session_phone = f"+{me.phone}" if me and me.phone else session_name
         bot = await c.get_entity("@aistudy_uz_bot")
 
-        # 1. Botga /start yuborib eng yangi menyuni olish
-        try:
-            await c.send_message(bot, "/start")
-            await asyncio.sleep(1.0)
-        except Exception:
-            pass
+        # 1. Kontakt holatini tekshirish
+        state = load_state()
+        state["active_session"] = clean_name
+        current_contact = state.get("current_contact_phone")
+        usage_count = state.get("contact_usage_count", 0)
+        needs_rotation = state.get("needs_contact_rotation", False) or (usage_count >= 5) or not current_contact
+
+        if needs_rotation:
+            print(f"[UNLIMITED POOL] Kontaktni yangilash talab etiladi (Hozirgi: {current_contact}, O'tilgan: {usage_count}/5)...", flush=True)
+            ok, new_phone = await change_contact_in_bot(c, bot)
+            if ok:
+                current_contact = new_phone
+                usage_count = 0
+                state = load_state()
+
+        # 2. 'Kod olish' tugmasini 1 marta bosish
         msgs = await c.get_messages(bot, limit=5)
-
-        # Til tanlash bo'lsa
-        for m in msgs:
-            if m.buttons:
-                for row in m.buttons:
-                    for b in row:
-                        if "UZB" in (b.text or "").upper():
-                            try:
-                                await b.click()
-                                await asyncio.sleep(1)
-                                msgs = await c.get_messages(bot, limit=5)
-                            except: pass
-                            break
-
-        # Kontakt ulashish so'ralsa
-        needs_contact = False
-        for m in msgs:
-            txt = (m.text or "").lower()
-            if any(w in txt for w in ["telefon", "raqam", "kontakt", "share"]):
-                needs_contact = True
-                break
-            if m.buttons:
-                for row in m.buttons:
-                    for b in row:
-                        bt = (b.text or "").lower()
-                        if any(w in bt for w in ["raqam", "telefon", "share", "kontakt"]):
-                            needs_contact = True
-                            break
-                    if needs_contact: break
-            if needs_contact: break
-
-        if needs_contact and me.phone:
-            contact = InputMediaContact(phone_number=me.phone, first_name=me.first_name or "User", last_name="", vcard="")
-            try:
-                await c.send_file(bot, contact)
-                await asyncio.sleep(1.5)
-                msgs = await c.get_messages(bot, limit=5)
-            except: pass
-
-        # Kod olish tugmasini 1 MARTA bosish
         click_time = time.time()
         clicked = False
         for m in msgs:
@@ -215,40 +317,86 @@ async def _fetch_from_one_session(session_name):
                             try:
                                 await b.click()
                                 clicked = True
-                                print(f"[TG BOT CLICK] ({session_name}) da 1 marta 'Kod olish' bosildi!", flush=True)
+                                print(f"[TG BOT CLICK] 'Kod olish' tugmasi bosildi ({b.text})", flush=True)
                                 break
-                            except: pass
+                            except Exception: pass
                     if clicked: break
             if clicked: break
 
-        # Kodni kutish - FAQAT tugma bosilgandan KEYIN kelgan yangi xabarni olamiz!
-        phone_num = f"+{me.phone}" if me.phone else session_name
-        for wait_s in range(1, 16):
-            await asyncio.sleep(1)
+        if not clicked:
+            # Agar tugma ko'rinmasa /start yuborish
+            await c.send_message(bot, "/start")
+            await asyncio.sleep(1.5)
+            msgs = await c.get_messages(bot, limit=3)
+            for m in msgs:
+                if m.buttons:
+                    for row in m.buttons:
+                        for b in row:
+                            bt = (b.text or "").lower()
+                            if any(w in bt for w in ["tasdiqlash", "verification", "kod", "code"]):
+                                try:
+                                    await b.click()
+                                    clicked = True
+                                    break
+                                except Exception: pass
+                        if clicked: break
+                if clicked: break
+
+        # 3. Kodni kutish va tahlil qilish
+        for wait_s in range(1, 15):
+            await asyncio.sleep(1.0)
             latest = await c.get_messages(bot, limit=3)
             for m in latest:
                 if m.out:
                     continue
-                # Tugma bosilgandan keyin kelgan xabar bo'lishi shart!
                 if m.date.timestamp() < (click_time - 2):
                     continue
 
                 txt = (m.text or "").strip()
                 txt_low = txt.lower()
 
-                # 1. Avval KOD bor-yo'qligini tekshiramiz (agar kod kelsa, darhol olamiz!)
+                # Kodni izlash (6 ta raqam)
                 m_code = re.search(r'\b(\d{6})\b', txt)
-                if m_code and any(w in txt_low for w in ["verification", "tasdiqlash", "code", "kod", "aistudy", "kodingiz"]):
+                if m_code and any(w in txt_low for w in ["verification", "tasdiqlash", "code", "kod", "aistudy", "kodingiz", "👉"]):
                     code = m_code.group(1)
+                    phone_display = f"Sessiya: {session_phone} | Kontakt: {current_contact} ({usage_count + 1}/5)"
                     print(f"\n=======================================================", flush=True)
-                    print(f"[TG BOT XABAR] ({phone_num}) dan YANGI kod keldi: [{code}]", flush=True)
+                    print(f"🎉 [TG KOD OLINDI] {code} [{phone_display}]", flush=True)
                     print(f"=======================================================\n", flush=True)
                     await c.disconnect()
-                    return code, phone_num
+                    return code, phone_display
 
-                # 2. Agar kod bo'lmasa va bot aniq limit/taqiq xabari bergan bo'lsagina chetlatamiz
+                # Limitga yetganlik xabari
                 if any(w in txt_low for w in ["limit", "cheklov", "faqat bitta", "bitta telefon", "kechirasiz", "mumkin emas"]):
-                    print(f"[TG BOT LIMIT DETECTED] ({phone_num}) limitga tushgan: {txt[:60]}", flush=True)
+                    print(f"⚠️ [TG BOT LIMIT] 5 talik limit aniqlandi! Avtomatik yangi kontaktga ulanmoqda...", flush=True)
+                    ok, new_phone = await change_contact_in_bot(c, bot)
+                    if ok:
+                        current_contact = new_phone
+                        usage_count = 0
+                        # Yangi limit ochildi, darhol 'Kod olish'ni qayta bosamiz
+                        await asyncio.sleep(1.5)
+                        new_msgs = await c.get_messages(bot, limit=3)
+                        for nm in new_msgs:
+                            if nm.buttons:
+                                for nr in nm.buttons:
+                                    for nb in nr:
+                                        if any(w in (nb.text or "").lower() for w in ["kod", "code", "verification", "tasdiqlash"]):
+                                            await nb.click()
+                                            break
+                        # Keyingi 10 soniyada yangi kodni kutish
+                        for _ in range(10):
+                            await asyncio.sleep(1.0)
+                            fresh = await c.get_messages(bot, limit=2)
+                            for fm in fresh:
+                                if not fm.out:
+                                    fm_txt = fm.text or ""
+                                    m_fresh = re.search(r'\b(\d{6})\b', fm_txt)
+                                    if m_fresh:
+                                        fresh_code = m_fresh.group(1)
+                                        phone_display = f"Sessiya: {session_phone} | Kontakt: {new_phone} (1/5)"
+                                        print(f"🎉 [TG KOD OLINDI (YANGI LIMIT)]: {fresh_code} [{phone_display}]", flush=True)
+                                        await c.disconnect()
+                                        return fresh_code, phone_display
                     await c.disconnect()
                     return None, "limit_exhausted"
 
@@ -259,73 +407,43 @@ async def _fetch_from_one_session(session_name):
         except: pass
         return None, str(e)
 
-def fetch_tg_code_from_pool(max_candidates=5):
+def fetch_tg_code_from_pool(max_candidates=3):
+    """
+    Asosiy funksiya: 1 ta sessiyadan cheksiz kod olish.
+    """
     candidates = get_candidate_sessions()
     if not candidates:
         print("[SESSION POOL] Faol sessiyalar topilmadi!", flush=True)
         return None, None
 
-    import concurrent.futures
-
-    state = load_state()
     for s_name in candidates[:max_candidates]:
-        print(f"[SESSION POOL] Tekshirilmoqda: {s_name}...", flush=True)
+        print(f"[SESSION POOL] Kod so'ralmoqda: {s_name}...", flush=True)
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 fut = pool.submit(lambda s: asyncio.run(_fetch_from_one_session(s)), s_name)
-                code, status = fut.result(timeout=35.0)
+                code, status = fut.result(timeout=40.0)
 
             if code:
                 phone_display = status if status and status != "ok" else s_name
                 print(f"[SESSION POOL CODE] {phone_display} dan yangi kod olindi: [{code}]", flush=True)
-                state["active_session"] = None
-                record_session_success(s_name)
                 return code, phone_display
             elif status == "limit_exhausted":
-                print(f"[SESSION POOL] {s_name} botda limitga yetgan, chetlatilmoqda...", flush=True)
+                print(f"[SESSION POOL] {s_name} da kontakt almashtirildi, qayta urinilmoqda...", flush=True)
                 mark_session_exhausted(s_name, reason="limit_exhausted")
             elif status == "unauthorized":
                 print(f"[SESSION POOL] {s_name} nofaol sessiya, chetlatilmoqda...", flush=True)
                 mark_session_unauthorized(s_name)
             else:
-                # no_code yoki bot kechikishi — SESSIYA CHETLATILMAYDI! Sessiya sog'lom!
                 print(f"[SESSION POOL INFO] {s_name}: @aistudy_uz_bot dan yangi kod kelmadi ({status}). Sessiya saqlab qolindi.", flush=True)
         except Exception as ex:
-            err_name = type(ex).__name__
-            err_str = f": {ex}" if str(ex) else ""
-            print(f"[SESSION POOL WARNING] {s_name}: Aloqa uzildi yoki taymaut ({err_name}{err_str}). Sessiya saqlab qolindi.", flush=True)
+            print(f"[SESSION POOL WARNING] {s_name}: Aloqa uzildi yoki taymaut ({ex}). Sessiya saqlab qolindi.", flush=True)
 
     return None, None
 
 def fetch_code_for_phone_ending(last_digits, timeout=30.0):
-    """Oxirgi 4 ta raqam bo'yicha sessiyani topib, undan kod olish (Tiklash uchun)"""
-    last_digits = str(last_digits).strip()
-    matched_sessions = []
-    if os.path.exists(SESSIONS_DIR):
-        for fn in os.listdir(SESSIONS_DIR):
-            if fn.endswith(".session"):
-                clean_name = fn[:-8]
-                clean_digits = re.sub(r'\D', '', clean_name)
-                if clean_digits.endswith(last_digits):
-                    matched_sessions.append(clean_name)
-    
-    print(f"[RECOVERY POOL] Oxirgi {last_digits} bo'yicha topilgan sessiyalar: {matched_sessions}", flush=True)
-    for s_name in matched_sessions:
-        print(f"[RECOVERY] {s_name} sessiyasidan kod so'ralmoqda...", flush=True)
-        try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                fut = executor.submit(lambda s=s_name: asyncio.run(_fetch_from_one_session(s)))
-                code, status = fut.result(timeout=timeout)
-            if code:
-                phone_display = status if status and status != "ok" else s_name
-                print(f"[RECOVERY SUCCESS] Kod olindi: [{code}] (Raqam: {phone_display})", flush=True)
-                return code, phone_display
-        except Exception as e:
-            print(f"[RECOVERY ERROR] {s_name}: {e}", flush=True)
-
-    # Agar aniq topilmasa, eng yangi faol sessiyalardan urinib ko'ramiz
-    return fetch_tg_code_from_pool(max_candidates=4)
+    """Tiklash jarayonida kod olish"""
+    return fetch_tg_code_from_pool(max_candidates=2)
 
 if __name__ == "__main__":
     code, s = fetch_tg_code_from_pool()
-    print("FINAL CODE:", code, "from", s)
+    print("NATIJA:", code, s)

@@ -2294,11 +2294,12 @@ def login_or_register_single_student(student, update_callback=None):
                                 print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
                                 registration_success = True
                                 record_session_success(session_used)
+                                notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
                                 break
 
                         if is_limited:
-                            # LIMIT HISOBLANMAYDI! Cheklovga uchragan sessiya darhol chetlatiladi va yangi sessiyaga o'tiladi
-                            notify(f"⚠️ [{name}] {session_used} raqami limitga yetgan, butunlay chetlatildi. Yangi sessiyadan kod olinmoqda...")
+                            # LIMIT HISOBLANMAYDI! Yangi kontaktga o'tiladi
+                            notify(f"⚠️ [{name}] {session_used} limitga uchradi. Avtomatik yangi kontakt ulanmoqda...")
                             mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
                             code = None
                             session_used = None
@@ -3077,11 +3078,12 @@ def process_single_student(student, update_callback=None):
                                 print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
                                 registration_success = True
                                 record_session_success(session_used)
+                                notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
                                 break
 
                         if is_limited:
-                            # LIMIT HISOBLANMAYDI! Cheklovga uchragan sessiya darhol chetlatiladi va yangi sessiyaga o'tiladi
-                            notify(f"⚠️ [{name}] {session_used} raqami limitga yetgan, butunlay chetlatildi. Yangi sessiyadan kod olinmoqda...")
+                            # LIMIT HISOBLANMAYDI! Yangi kontaktga o'tiladi
+                            notify(f"⚠️ [{name}] {session_used} limitga uchradi. Avtomatik yangi kontakt ulanmoqda...")
                             mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
                             code = None
                             session_used = None
