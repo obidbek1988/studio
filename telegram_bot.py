@@ -877,17 +877,19 @@ class TelegramBotServer:
         except Exception as e_up:
             print(f"[ON-DEMAND UPLOAD ERROR] {e_up}")
 
-        # 2. Ushbu worker uchun mustaqil sessiyani tanlash
-        chosen_session = "998330072869"
+        # 2. Ushbu worker uchun mustaqil sessiyani tanlash (Asosiy 998330072869 yoki tg_session EMAS!)
+        chosen_session = "998910400583"
         try:
-            import session_pool
-            candidates = session_pool.get_candidate_sessions()
-            for c in candidates:
-                if c != "998330072869":
-                    chosen_session = c
-                    break
-        except Exception:
-            pass
+            import session_pool, random
+            state = session_pool.load_state()
+            valid = state.get("valid_sessions", [])
+            exclude = {"998330072869", "+998330072869", "tg_session", "tg_session.session"}
+            fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude]
+            if fresh:
+                chosen_session = random.choice(fresh[:100])
+            print(f"[ON-DEMAND] Yangi worker uchun mustaqil sessiya tanlandi: {chosen_session}")
+        except Exception as e_ch:
+            print(f"[ON-DEMAND CHOOSE SESSION ERROR] {e_ch}")
 
         # 3. GitHub Actions workflow_dispatch yuborish
         try:

@@ -103,32 +103,32 @@ def save_state(state):
 
 def get_candidate_sessions():
     """
-    1 ta doimiy ishchi sessiyani birinchi o'ringa qo'yadi.
-    Agar active_session belgilanmagan bo'lsa, '998330072869' yoki birinchi yaroqli sessiyani tanlaydi.
+    Aktiv sessiyani birinchi o'ringa qo'yadi.
+    Har bir kompyuter yoki worker o'ziga biriktirilgan mustaqil sessiyadan foydalanadi.
     """
     state = load_state()
-    primary = state.get("active_session") or "998330072869"
-    primary_clean = normalize_session_name(primary)
-
-    # Agar ildiz papkada tg_session.session bo'lsa
-    root_tg = os.path.join(BASE_DIR, "tg_session.session")
+    primary = state.get("active_session")
     candidates = []
-    if primary_clean:
-        candidates.append(primary_clean)
-    if os.path.exists(root_tg):
-        candidates.append("tg_session")
+    if primary:
+        clean_p = normalize_session_name(primary)
+        if clean_p:
+            candidates.append(clean_p)
 
     valid = state.get("valid_sessions", [])
-    raw_exhausted = state.get("exhausted", [])
     raw_unauth = state.get("unauthorized", [])
-
-    exhausted = {normalize_session_name(x) for x in raw_exhausted if x}
     unauth = {normalize_session_name(x) for x in raw_unauth if x}
 
     for s in valid:
         clean_s = normalize_session_name(s)
         if clean_s and clean_s not in unauth and clean_s not in candidates:
             candidates.append(clean_s)
+
+    # Agar hech qanday sessiya bo'lmasa, zaxira tg_session yoki 998330072869
+    if not candidates:
+        if os.path.exists(os.path.join(BASE_DIR, "tg_session.session")):
+            candidates.append("tg_session")
+        else:
+            candidates.append("998330072869")
 
     return candidates
 
