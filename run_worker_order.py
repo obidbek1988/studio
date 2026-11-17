@@ -112,7 +112,7 @@ def main():
 
     srv_title = "To'liq Sertifikat olish" if service_mode == "full_cert" else "Faqat Login-parol olish"
     start_msg = (
-        f"⚡ <b>Buyurtmangiz bo'yicha maxsus Virtual Kompyuter ish boshladi!</b>\n\n"
+        f"⚡ <b>Buyurtmangiz bo'yicha maxsus TEZKOR SERVERLARIMIZ ish boshladi!</b>\n\n"
         f"📁 Fayl: <b>{os.path.basename(str(excel_path))}</b>\n"
         f"🌟 Xizmat turi: <b>{srv_title}</b>\n"
         f"📱 Biriktirilgan Sessiya: <code>{session_name}</code>\n"

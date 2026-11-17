@@ -1095,16 +1095,16 @@ class TelegramBotServer:
                     self.answer_callback_query(cb_id, "Buyurtma topilmadi yoki allaqachon navbatga qo'yilgan!", show_alert=True)
                     return
 
-                # Agar asosiy kompyuter band bo'lsa, navbatda kutdirmaymiz: darhol yangi Virtual Kompyuter yoqamiz!
+                # Agar asosiy kompyuter band bo'lsa, navbatda kutdirmaymiz: darhol yangi Tezkor Server yoqamiz!
                 if current_active_order is not None:
                     ok, sess_assigned = self.dispatch_cloud_order_worker(po)
                     if ok:
-                        self.answer_callback_query(cb_id, f"Yangi Virtual Kompyuter yoqildi! 🚀", show_alert=True)
-                        self.edit_message(chat_id, msg_id, f"🚀 <b>Buyurtma uchun YANGI VIRTUAL KOMPYUTER ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
+                        self.answer_callback_query(cb_id, f"Yangi Tezkor Server yoqildi! 🚀", show_alert=True)
+                        self.edit_message(chat_id, msg_id, f"🚀 <b>Buyurtma uchun YANGI TEZKOR BULUT SERVERI ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
                         self.send_message(
                             uid,
                             f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
-                            f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI VIRTUAL KOMPYUTER ishga tushirildi!</b>\n"
+                            f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI TEZKOR SERVERLARIMIZ ishga tushirildi!</b>\n"
                             f"📁 Fayl: <b>{po['orig_fname']}</b> ({po['student_cnt']} ta o'quvchi)\n"
                             f"📱 Mustaqil Telegram sessiyasi: <code>{sess_assigned}</code>\n"
                             f"⚡ Quvvat: <b>15 ta parallel oqim</b>\n\n"
@@ -1305,10 +1305,10 @@ class TelegramBotServer:
                             'service_mode': mode
                         }
                         if current_active_order is not None:
-                            # Asosiy kompyuter band! Kutdirmasdan darhol yangi Virtual Kompyuter yoqamiz!
+                            # Asosiy kompyuter band! Kutdirmasdan darhol yangi Tezkor Server yoqamiz!
                             ok, sess_assigned = self.dispatch_cloud_order_worker(adm_order)
                             if ok:
-                                self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi uchun yangi ALOHIDA Virtual Kompyuter ishga tushirildi!</b> ({student_cnt} ta bola, {srv_label})\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
+                                self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi uchun yangi ALOHIDA TEZKOR SERVER ishga tushirildi!</b> ({student_cnt} ta bola, {srv_label})\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
                                 return
 
                         self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi, {srv_label}). Navbatga qo'yildi va ishga tushmoqda...")
@@ -1572,7 +1572,7 @@ class TelegramBotServer:
                 f"👥 <b>Botdagi faol a'zolar:</b> <b>{active_users_display}+ ta</b> o'qituvchi va maktablar\n"
                 f"✅ <b>Muvaffaqiyatli yakunlangan buyurtmalar:</b> <b>{completed_orders_display}+ ta</b>\n"
                 f"⚡ <b>Tizim tezligi:</b> 15 ta parallel yengil oqim\n"
-                f"🚀 <b>Virtual kompyuterlar:</b> Har bir buyurtma uchun navbatsiz mustaqil parallel ijro\n"
+                f"🚀 <b>Tezkor Bulut Serverlari:</b> Har bir buyurtma uchun navbatsiz mustaqil parallel ijro\n"
                 f"🛡 <b>Kafolat:</b> aistudy.uz bazasida tasdiqlangan rasmiy havolalar!\n\n"
                 f"<i>(Barcha ko'rsatkichlar real vaqtda bazadan yangilanib turadi)</i>"
             )
