@@ -319,6 +319,8 @@ async def _fetch_from_one_session(session_name):
                 state = load_state()
 
         # 2. 'Kod olish' tugmasini 1 marta bosish
+        initial_msgs = await c.get_messages(bot, limit=1)
+        last_known_msg_id = initial_msgs[0].id if initial_msgs else 0
         msgs = await c.get_messages(bot, limit=5)
         click_time = time.time()
         clicked = False
@@ -356,14 +358,15 @@ async def _fetch_from_one_session(session_name):
                         if clicked: break
                 if clicked: break
 
-        # 3. Kodni kutish va tahlil qilish
+        # 3. Kodni kutish va tahlil qilish (FAQAT bosilgandan keyin kelgan YANGI xabarlar)
         for wait_s in range(1, 15):
             await asyncio.sleep(1.0)
             latest = await c.get_messages(bot, limit=3)
             for m in latest:
                 if m.out:
                     continue
-                if m.date.timestamp() < (click_time - 2):
+                # Faqatgina tugma bosilgandan so'ng kelgan yangi xabarlarni qabul qilish
+                if m.id <= last_known_msg_id and m.date.timestamp() < click_time:
                     continue
 
                 txt = (m.text or "").strip()
