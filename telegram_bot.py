@@ -1498,9 +1498,10 @@ class TelegramBotServer:
                 )
 
             # Jonli ishonch ko'rsatkichlari
-            orders_cnt = len(self.users_db.get("orders", []))
+            db_u = load_users_db()
+            orders_cnt = len(db_u.get("orders", []))
             completed_orders_display = max(orders_cnt, 58)
-            users_cnt = len(self.users_db.get("users", {}))
+            users_cnt = len(db_u.get("users", {}))
             active_users_display = max(users_cnt, 240)
 
             welcome_text = (
@@ -1561,9 +1562,10 @@ class TelegramBotServer:
 
         # 1.2. 📊 Bot Statistikasi (Ommaviy ishonch ko'rsatkichlari)
         if "bot statistikasi" in t_low or "statistika" in t_low:
-            orders_cnt = len(self.users_db.get("orders", []))
+            db_u = load_users_db()
+            orders_cnt = len(db_u.get("orders", []))
             completed_orders_display = max(orders_cnt, 58)
-            users_cnt = len(self.users_db.get("users", {}))
+            users_cnt = len(db_u.get("users", {}))
             active_users_display = max(users_cnt, 240)
             stats_msg = (
                 f"📊 <b>BOTNING JONLI STATISTIKASI VA ISHONCH KO'RSATKICHLARI:</b>\n\n"
