@@ -109,6 +109,27 @@ is_queue_worker_running = False
 queue_lock = threading.Lock()
 current_active_order = None
 
+PENDING_ORDERS_FILE = BASE_DIR / "pending_orders.json"
+
+def save_pending_orders():
+    try:
+        with open(PENDING_ORDERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(pending_orders, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+def load_pending_orders():
+    global pending_orders
+    if PENDING_ORDERS_FILE.exists():
+        try:
+            with open(PENDING_ORDERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                pending_orders = {int(k): v for k, v in data.items()}
+        except Exception:
+            pass
+
+load_pending_orders()
+
 def load_config():
     cfg = DEFAULT_CONFIG.copy()
     if CONFIG_FILE.exists():
@@ -1058,6 +1079,7 @@ class TelegramBotServer:
                         'total_price': total_price,
                         'service_mode': srv_mode
                     }
+                    save_pending_orders()
 
                     card_num = self.config.get('card_info') or 'Karta ma`lumoti'
                     invoice_msg = (
@@ -1098,8 +1120,31 @@ class TelegramBotServer:
             if data.startswith("approve_order_"):
                 uid = int(data.split("_")[2])
                 po = pending_orders.pop(uid, None)
+                save_pending_orders()
                 if not po:
-                    self.answer_callback_query(cb_id, "Buyurtma topilmadi yoki allaqachon navbatga qo'yilgan!", show_alert=True)
+                    # Diskdan qidirish (agar server qayta yuklangan bo'lsa)
+                    cand = []
+                    for s_dir in [BASE_DIR / "orders", BASE_DIR, Path("core_temp/orders")]:
+                        if s_dir.exists():
+                            for f in s_dir.glob("*.xlsx"):
+                                if str(uid) in f.name:
+                                    cand.append(f)
+                    if cand:
+                        cand.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+                        po = {
+                            'chat_id': uid,
+                            'user_name': 'Mijoz',
+                            'path': str(cand[0]),
+                            'orig_fname': cand[0].name.split(f"{uid}_")[-1] if f"{uid}_" in cand[0].name else cand[0].name,
+                            'student_cnt': 26,
+                            'total_price': 0,
+                            'service_mode': 'full_cert'
+                        }
+                        print(f"[RECOVERED ORDER] {uid} uchun diskdagi fayl tiklandi: {cand[0].name}")
+
+                if not po:
+                    self.answer_callback_query(cb_id, "Buyurtma topilmadi yoki allaqachon bajarilgan!", show_alert=True)
+                    self.send_message(chat_id, f"⚠️ <b>Mijoz (ID: {uid}) buyurtmasi topilmadi.</b>\nServer qayta yuklangani sababli eski to'lov ma'lumoti xotiradan tozalangan bo'lishi mumkin. Iltimos, mijozdan faylni qayta yuborishini so'rang yoki o'zingiz botga Excel faylni yuboring!")
                     return
 
                 # Navbatda kutdirmaymiz: har bir buyurtma uchun darhol ALOHIDA MUSTAQIL TEZKOR SERVER yoqamiz!
@@ -1367,6 +1412,7 @@ class TelegramBotServer:
                         'total_price': total_price,
                         'service_mode': mode
                     }
+                    save_pending_orders()
 
                     invoice_msg = (
                         f"📥 <b>Excel faylingiz muvaffaqiyatli qabul qilindi!</b>\n"
