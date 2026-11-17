@@ -380,7 +380,7 @@ class TelegramBotServer:
                     [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
-                "is_persistent": False,
+                "is_persistent": True,
             }
         return {
             "keyboard": [
@@ -389,7 +389,7 @@ class TelegramBotServer:
                 [{"text": "💰 Rasmiy Narxlar"}, {"text": "👨‍💼 Admin bilan aloqa"}],
             ],
             "resize_keyboard": True,
-            "is_persistent": False,
+            "is_persistent": True,
         }
 
     # =========================================================================
@@ -1561,7 +1561,7 @@ class TelegramBotServer:
             return
 
         # 1.2. 📊 Bot Statistikasi (Ommaviy ishonch ko'rsatkichlari)
-        if "bot statistikasi" in t_low or "statistika" in t_low:
+        if "bot statistikasi" in t_low or "statistika" in t_low or text.startswith("/stats"):
             db_u = load_users_db()
             orders_cnt = len(db_u.get("orders", []))
             completed_orders_display = max(orders_cnt, 58)
@@ -1941,7 +1941,7 @@ class TelegramBotServer:
             return
 
         # 19. 💰 Rasmiy Narxlar
-        if text in ("💰 Rasmiy Narxlar", "/narxlar", "/tariflar", "💰 Tariflar", "Tariflar", "💰 Narxlar va 50% Avans"):
+        if text in ("💰 Rasmiy Narxlar", "/narxlar", "/tariflar", "💰 Tariflar", "Tariflar", "💰 Narxlar va 50% Avans", "/price", "/prices"):
             card = self.config.get("card_info")
             msg = (
                 "💰 <b>RASMIY TARIF VA XIZMATLAR:</b>\n"
@@ -1963,7 +1963,7 @@ class TelegramBotServer:
             return
 
         # 20. 👨‍💼 Admin bilan aloqa
-        if text in ("👨‍💼 Admin bilan aloqa", "/admin"):
+        if text in ("👨‍💼 Admin bilan aloqa", "/admin", "/help", "help", "Help"):
             admin_u = self.config.get("admin_username", "@OBIDBEK1988")
             admin_url = self.config.get("admin_tg_url", "https://t.me/OBIDBEK1988")
             markup = {"inline_keyboard": [[{"text": f"👨‍💼 Adminga yozish ({admin_u})", "url": admin_url}]]}
