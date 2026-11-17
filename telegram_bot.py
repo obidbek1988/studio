@@ -849,7 +849,7 @@ class TelegramBotServer:
         if not tok:
             return False, "GH_TOKEN topilmadi"
 
-        order_id = str(int(time.time()))
+        order_id = f"{int(time.time())}_{random.randint(100, 999)}"
         chat_id = order_info.get("chat_id")
         user_name = order_info.get("user_name", "Mijoz")
         service_mode = order_info.get("service_mode", "full_cert")
@@ -1097,22 +1097,21 @@ class TelegramBotServer:
                     self.answer_callback_query(cb_id, "Buyurtma topilmadi yoki allaqachon navbatga qo'yilgan!", show_alert=True)
                     return
 
-                # Agar asosiy kompyuter band bo'lsa, navbatda kutdirmaymiz: darhol yangi Tezkor Server yoqamiz!
-                if current_active_order is not None:
-                    ok, sess_assigned = self.dispatch_cloud_order_worker(po)
-                    if ok:
-                        self.answer_callback_query(cb_id, f"Yangi Tezkor Server yoqildi! 🚀", show_alert=True)
-                        self.edit_message(chat_id, msg_id, f"🚀 <b>Buyurtma uchun YANGI TEZKOR BULUT SERVERI ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
-                        self.send_message(
-                            uid,
-                            f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
-                            f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI TEZKOR SERVERLARIMIZ ishga tushirildi!</b>\n"
-                            f"📁 Fayl: <b>{po['orig_fname']}</b> ({po['student_cnt']} ta o'quvchi)\n"
-                            f"📱 Mustaqil Telegram sessiyasi: <code>{sess_assigned}</code>\n"
-                            f"⚡ Quvvat: <b>15 ta parallel oqim</b>\n\n"
-                            f"<i>(Siz hech qanday navbatda kutmaysiz! Buyurtmangiz to'liq parallel bajarilmoqda)</i>"
-                        )
-                        return
+                # Navbatda kutdirmaymiz: har bir buyurtma uchun darhol ALOHIDA MUSTAQIL TEZKOR SERVER yoqamiz!
+                ok, sess_assigned = self.dispatch_cloud_order_worker(po)
+                if ok:
+                    self.answer_callback_query(cb_id, f"Yangi Tezkor Server yoqildi! 🚀", show_alert=True)
+                    self.edit_message(chat_id, msg_id, f"🚀 <b>Buyurtma uchun YANGI TEZKOR BULUT SERVERI ishga tushirildi!</b>\n👤 Mijoz: <code>{uid}</code>\n📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
+                    self.send_message(
+                        uid,
+                        f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
+                        f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI TEZKOR SERVERLARIMIZ ishga tushirildi!</b>\n"
+                        f"📁 Fayl: <b>{po['orig_fname']}</b> ({po['student_cnt']} ta o'quvchi)\n"
+                        f"📱 Mustaqil Telegram sessiyasi: <code>{sess_assigned}</code>\n"
+                        f"⚡ Quvvat: <b>15 ta parallel oqim</b>\n\n"
+                        f"<i>(Siz hech qanday navbatda kutmaysiz! Buyurtmangiz to'liq parallel bajarilmoqda)</i>"
+                    )
+                    return
 
                 with queue_lock:
                     order_queue.append(po)
@@ -1306,18 +1305,26 @@ class TelegramBotServer:
                             'total_price': 0,
                             'service_mode': mode
                         }
-                        if current_active_order is not None:
-                            # Asosiy kompyuter band! Kutdirmasdan darhol yangi Tezkor Server yoqamiz!
-                            ok, sess_assigned = self.dispatch_cloud_order_worker(adm_order)
-                            if ok:
-                                self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi uchun yangi ALOHIDA TEZKOR SERVER ishga tushirildi!</b> ({student_cnt} ta bola, {srv_label})\n📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n⚡ Navbat yo'q, parallel ish boshlandi!")
-                                return
-
-                        self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi, {srv_label}). Navbatga qo'yildi va ishga tushmoqda...")
-                        with queue_lock:
-                            order_queue.append(adm_order)
-                        self.start_queue_worker()
-                        return
+                        # Administrator istalgancha bir nechta fayl tashlasa ham NAVBATSIS:
+                        # Har bir fayl uchun alohida MUSTAQIL TEZKOR BULUT SERVERI ishga tushiriladi!
+                        ok, sess_assigned = self.dispatch_cloud_order_worker(adm_order)
+                        if ok:
+                            self.send_message(
+                                chat_id,
+                                f"👑 <b>Administrator buyurtmasi uchun YANGI ALOHIDA TEZKOR SERVER ishga tushirildi!</b>\n\n"
+                                f"📁 Fayl: <b>{orig_fname}</b> ({student_cnt} ta o'quvchi, {srv_label})\n"
+                                f"📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n"
+                                f"🚀 Quvvat: <b>15 ta parallel oqim</b>\n"
+                                f"⚡ <b>Navbat yo'q: Barcha tashlangan fayllar to'liq parallel bajariladi!</b>",
+                                reply_markup=self.get_reply_keyboard(chat_id)
+                            )
+                            return
+                        else:
+                            self.send_message(chat_id, f"👑 <b>Administrator buyurtmasi qabul qilindi!</b> ({student_cnt} ta o'quvchi, {srv_label}). Navbatga qo'yildi va ishga tushmoqda...")
+                            with queue_lock:
+                                order_queue.append(adm_order)
+                            self.start_queue_worker()
+                            return
 
                     # 2. AGAR MIJOZ YUBORGAN BO'LSA:
                     mode = user_selected_service.get(chat_id)
