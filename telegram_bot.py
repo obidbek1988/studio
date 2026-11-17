@@ -1129,8 +1129,8 @@ class TelegramBotServer:
                     )
                 return
 
-            if data.startswith("approve_order_"):
-                uid = int(data.split("_")[2])
+            if data.startswith("approve_order_") or data.startswith("approve_check_"):
+                uid = int(data.split("_")[-1])
                 po = pending_orders.pop(uid, None)
                 save_pending_orders()
                 if not po:
@@ -1169,15 +1169,15 @@ class TelegramBotServer:
                             'user_name': 'Mijoz',
                             'path': str(cand[0]),
                             'orig_fname': cand[0].name.split(f"{uid}_")[-1] if f"{uid}_" in cand[0].name else cand[0].name,
-                            'student_cnt': 26,
+                            'student_cnt': 27,
                             'total_price': 0,
                             'service_mode': 'full_cert'
                         }
                         print(f"[RECOVERED ORDER] {uid} uchun diskdagi fayl tiklandi: {cand[0].name}")
 
                 if not po:
-                    self.answer_callback_query(cb_id, "Buyurtma topilmadi yoki allaqachon bajarilgan!", show_alert=True)
-                    self.send_message(chat_id, f"⚠️ <b>Mijoz (ID: {uid}) buyurtmasi topilmadi.</b>\nServer qayta yuklangani sababli eski to'lov ma'lumoti xotiradan tozalangan bo'lishi mumkin. Iltimos, mijozdan faylni qayta yuborishini so'rang yoki o'zingiz botga Excel faylni yuboring!")
+                    self.answer_callback_query(cb_id, "Buyurtma fayli topilmadi!", show_alert=True)
+                    self.send_message(chat_id, f"⚠️ <b>Mijoz (ID: {uid}) buyurtmasi topilmadi.</b>\nFaylni qayta yuborishini so'rang yoki o'zingiz botga Excel faylni yuboring!")
                     return
 
                 # ASOSIY SERVERGA TEGILMAYDI! Mijozlar uchun doimo ALOHIDA ON-DEMAND TEZKOR BULUT SERVERI yoqiladi!
@@ -1189,7 +1189,7 @@ class TelegramBotServer:
                         uid,
                         f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
                         f"🚀 <b>Sizning buyurtmangiz uchun maxsus YANGI TEZKOR SERVERLARIMIZ ishga tushirildi!</b>\n"
-                        f"📁 Fayl: <b>{po['orig_fname']}</b> ({po.get('student_cnt', 26)} ta o'quvchi)\n"
+                        f"📁 Fayl: <b>{po['orig_fname']}</b> ({po.get('student_cnt', 27)} ta o'quvchi)\n"
                         f"📱 Biriktirilgan Mustaqil Sessiya: <code>{sess_assigned}</code>\n"
                         f"⚡ Quvvat: <b>15 ta parallel oqim</b>\n\n"
                         f"<i>(Jarayon real vaqtda yangilanadi va yakunlangach tayyor sertifikatlar yozilgan Excel fayl shu yerga yuboriladi)</i>"
@@ -1200,45 +1200,13 @@ class TelegramBotServer:
                     self.send_message(chat_id, f"❌ <b>Alohida server yoqishda xatolik:</b> {sess_assigned}")
                     return
 
-                if pos == 1 and not current_active_order:
-                    queue_msg = (
-                        f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
-                        f"🚀 <b>Buyurtmangiz bo'yicha ish boshlandi!</b>\n"
-                        f"📁 Fayl: <b>{po['orig_fname']}</b> ({po['student_cnt']} ta o'quvchi)\n\n"
-                        f"<i>(Har bir o'quvchining sertifikati tayyor bo'lishi bilan shu yerga jonli hisobot keladi)</i>"
-                    )
-                else:
-                    queue_msg = (
-                        f"✅ <b>To'lovingiz muvaffaqiyatli tasdiqlandi!</b>\n\n"
-                        f"📋 <b>Siz navbatda #{pos}-o'rindasiz.</b>\n"
-                        f"👥 Oldingizda: <b>{ahead_students} ta o'quvchi</b> (hozir bajarilmoqda)\n"
-                        f"⏱ <b>Taxminiy navbat kelish vaqti:</b> ~<b>{ahead_minutes} daqiqa</b>\n\n"
-                        f"🚀 <i>Navbatingiz kelishi bilanoq sertifikatlar chiqarish avtomatik boshlanadi!</i>"
-                    )
-                self.send_message(uid, queue_msg)
-                self.start_queue_worker()
-                return
-
-            if data.startswith("reject_order_"):
-                uid = int(data.split("_")[2])
+            if data.startswith("reject_order_") or data.startswith("reject_check_"):
+                uid = int(data.split("_")[-1])
                 pending_orders.pop(uid, None)
+                save_pending_orders()
                 self.answer_callback_query(cb_id, "Buyurtma rad etildi ❌", show_alert=True)
                 self.send_message(uid, "❌ <b>Buyurtmangiz yoki to'lov chekingiz tasdiqlanmadi.</b>\nIltimos, to'g'ri to'lov chekini qayta yuboring yoki Admin bilan bog'laning.")
                 self.edit_message(chat_id, msg_id, f"❌ <b>Buyurtma RAD ETILDI!</b> (Mijoz: <code>{uid}</code>)")
-                return
-
-            if data.startswith("approve_check_"):
-                uid = int(data.split("_")[2])
-                self.answer_callback_query(cb_id, "To'lov cheki tasdiqlandi! ✅", show_alert=True)
-                self.send_message(uid, "✅ <b>To'lovingiz tasdiqlandi!</b>\nBuyurtmangiz navbatga qabul qilindi. Tez orada sertifikatlar tayyor bo'ladi!")
-                self.edit_message(chat_id, msg_id, f"✅ <b>To'lov cheki TASDIQLANDI!</b> (Foydalanuvchi: <code>{uid}</code>)")
-                return
-
-            if data.startswith("reject_check_"):
-                uid = int(data.split("_")[2])
-                self.answer_callback_query(cb_id, "To'lov cheki rad etildi ❌", show_alert=True)
-                self.send_message(uid, "❌ <b>To'lov chekingiz tasdiqlanmadi.</b>\nIltimos, aniq va to'g'ri to'lov chekini qayta yuboring yoki Admin bilan bog'laning.")
-                self.edit_message(chat_id, msg_id, f"❌ <b>To'lov cheki RAD ETILDI!</b> (Foydalanuvchi: <code>{uid}</code>)")
                 return
 
             if data.startswith("send_cert_file_"):
