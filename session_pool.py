@@ -37,6 +37,20 @@ def generate_random_uz_phone():
     tail = f"{random.randint(1000000, 9999999)}"
     return f"+998{prefix}{tail}"
 
+CONSUMED_CODES = set()
+CONSUMED_MSG_IDS = set()
+
+def invalidate_last_code(code=None, session_name=None):
+    """Eskirgan yoki xato deb topilgan kod va kontaktni bekor qilish"""
+    global CONSUMED_CODES
+    if code:
+        CONSUMED_CODES.add(str(code).strip())
+    state = load_state()
+    state["needs_contact_rotation"] = True
+    state["contact_usage_count"] = 5
+    save_state(state)
+    print(f"[SESSION POOL] Kod bekor qilindi ({code}) va yangi kontakt talab qilindi!", flush=True)
+
 def normalize_session_name(name):
     """Sessiya nomini tozalab, sof raqamlar ko'rinishiga keltiradi"""
     if not name:
@@ -358,7 +372,12 @@ async def _fetch_from_one_session(session_name):
                 # Kodni izlash (6 ta raqam)
                 m_code = re.search(r'\b(\d{6})\b', txt)
                 if m_code and any(w in txt_low for w in ["verification", "tasdiqlash", "code", "kod", "aistudy", "kodingiz", "👉"]):
-                    code = m_code.group(1)
+                    found_code = m_code.group(1)
+                    if found_code in CONSUMED_CODES or m.id in CONSUMED_MSG_IDS:
+                        continue
+                    code = found_code
+                    CONSUMED_CODES.add(code)
+                    CONSUMED_MSG_IDS.add(m.id)
                     phone_display = f"Sessiya: {session_phone} | Kontakt: {current_contact} ({usage_count + 1}/5)"
                     print(f"\n=======================================================", flush=True)
                     print(f"🎉 [TG KOD OLINDI] {code} [{phone_display}]", flush=True)

@@ -2314,14 +2314,21 @@ def login_or_register_single_student(student, update_callback=None):
 
                         if is_invalid:
                             clean_attempts += 1
-                            notify(f"⚠️ [{name}] Kod xato yoki eskirgan ({clean_attempts}/3 toza urinish)...")
+                            # Kod xato yoki eskirgan bo'lsa, zudlik bilan kontaktni yangilaymiz!
+                            try:
+                                from session_pool import mark_session_exhausted, invalidate_last_code
+                                invalidate_last_code(code, session_used)
+                                mark_session_exhausted(session_used, reason="Kod xato yoki eskirgan")
+                            except Exception as e_inv:
+                                print(f"[INVALIDATE ERROR] {e_inv}")
+                            notify(f"⚠️ [{name}] Kod eskirgan/xato! Zudlik bilan yangi kontaktga almashtirilmoqda ({clean_attempts}/3)...")
                             code = None
                             session_used = None
                             try:
                                 resend_btn = page.locator("a:has-text('qayta yuborish'), button:has-text('qayta yuborish'), *:has-text('qayta yuborish')")
                                 if resend_btn.count() > 0 and resend_btn.first.is_visible():
                                     resend_btn.first.click(force=True)
-                                    time.sleep(1)
+                                    time.sleep(2)
                             except Exception:
                                 pass
                             continue
@@ -3098,14 +3105,21 @@ def process_single_student(student, update_callback=None):
 
                         if is_invalid:
                             clean_attempts += 1
-                            notify(f"⚠️ [{name}] Kod xato yoki eskirgan ({clean_attempts}/3 toza urinish)...")
+                            # Kod xato yoki eskirgan bo'lsa, zudlik bilan kontaktni yangilaymiz!
+                            try:
+                                from session_pool import mark_session_exhausted, invalidate_last_code
+                                invalidate_last_code(code, session_used)
+                                mark_session_exhausted(session_used, reason="Kod xato yoki eskirgan")
+                            except Exception as e_inv:
+                                print(f"[INVALIDATE ERROR] {e_inv}")
+                            notify(f"⚠️ [{name}] Kod eskirgan/xato! Zudlik bilan yangi kontaktga almashtirilmoqda ({clean_attempts}/3)...")
                             code = None
                             session_used = None
                             try:
                                 resend_btn = page.locator("a:has-text('qayta yuborish'), button:has-text('qayta yuborish'), *:has-text('qayta yuborish')")
                                 if resend_btn.count() > 0 and resend_btn.first.is_visible():
                                     resend_btn.first.click(force=True)
-                                    time.sleep(1)
+                                    time.sleep(2)
                             except Exception:
                                 pass
                             continue
