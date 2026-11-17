@@ -193,7 +193,7 @@ def main():
     )
     send_telegram_doc(bot_token, chat_id, str(excel_path), caption=finish_caption, custom_filename=export_fname)
 
-    # 5. Adminga hisobot
+    # 5. Adminga hisobot va tayyor Excel fayl nusxasi
     if admin_id and admin_id != chat_id:
         admin_report = (
             f"✅ <b>ON-DEMAND WORKER YAKUNLANDI:</b>\n"
@@ -204,6 +204,10 @@ def main():
             f"ℹ️ Tezkor Server o'z vazifasini muvaffaqiyatli yakunladi."
         )
         send_telegram_msg(bot_token, admin_id, admin_report)
+        try:
+            send_telegram_doc(bot_token, admin_id, str(excel_path), caption=f"👑 <b>Admin uchun tayyor fayl nusxasi:</b>\n" + admin_report, custom_filename=export_fname)
+        except Exception as e_ad:
+            print(f"[ADMIN DOC ERROR] {e_ad}")
 
     # 6. Markaziy bazani sinxronlash
     try:
