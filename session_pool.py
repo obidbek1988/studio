@@ -365,8 +365,8 @@ async def _fetch_from_one_session(session_name):
             for m in latest:
                 if m.out:
                     continue
-                # Faqatgina tugma bosilgandan so'ng kelgan yangi xabarlarni qabul qilish
-                if m.id <= last_known_msg_id and m.date.timestamp() < click_time:
+                # Faqatgina tugma bosilgandan so'ng kelgan YANGI xabarlarni qabul qilish (eski xabarlar mutlaqo olinmaydi)
+                if m.id <= last_known_msg_id:
                     continue
 
                 txt = (m.text or "").strip()

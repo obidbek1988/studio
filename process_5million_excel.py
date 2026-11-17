@@ -2170,63 +2170,10 @@ def login_or_register_single_student(student, update_callback=None):
                         except Exception:
                             pass
 
-                        # 2. Kod olish
-                        if not code:
-                            try:
-                                page.evaluate("""() => {
-                                    const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
-                                    inputs.forEach(inp => {
-                                        inp.value = '';
-                                        inp.dispatchEvent(new Event('input', { bubbles: true }));
-                                        inp.dispatchEvent(new Event('change', { bubbles: true }));
-                                    });
-                                }""")
-                                code_inputs = page.locator(".verification-input, input[maxlength='1']")
-                                for idx_c in range(code_inputs.count()):
-                                    code_inputs.nth(idx_c).fill("")
-                                time.sleep(0.5)
-                            except Exception:
-                                pass
-
-                            notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) tasdiqlash kodi olinmoqda ...")
-                            code, session_used = get_telegram_verification_code()
-                            student_idle_start = time.time()  # Kod kelgach taymer yangilanadi
-                            if code:
-                                notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
-                            if not code:
-                                time.sleep(3)
-                                code, session_used = get_telegram_verification_code()
-                                student_idle_start = time.time()
-                            if not code:
-                                notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
-                                continue
-
-                        # 3. Kodni katakchalarga kiritish
-                        page.evaluate("""(code) => {
-                            const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
-                            for (let i = 0; i < Math.min(6, inputs.length); i++) {
-                                inputs[i].focus();
-                                inputs[i].value = code[i];
-                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-                                inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }""", code)
-                        time.sleep(0.5)
-                        try:
-                            code_inputs = page.locator(".verification-input, input[maxlength='1']")
-                            if code_inputs.count() >= 6:
-                                for idx_d, digit in enumerate(code[:6]):
-                                    code_inputs.nth(idx_d).click(force=True)
-                                    code_inputs.nth(idx_d).fill(digit)
-                        except Exception:
-                            pass
-                        time.sleep(1)
-
-                        # 4. reCAPTCHA ni AI bilan yechish
+                        # 2. BIRINCHI BO'LIB reCAPTCHA ni AI bilan yechish (Kod eskirib qolmasligi uchun kapcha oldindan tayyorlanadi)
                         captcha_ok = handle_recaptcha(page)
                         if not captcha_ok:
                             print(f"[VERIFY RECAPTCHA BLOCKED] Kapcha bloklandi (Try again later)!", flush=True)
-                            # Agar sahifada 'qayta yuborish' tugmasi bo'lsa va 1-urinish bo'lsa, bosib ko'ramiz:
                             has_resend = False
                             if session_rotations < 2:
                                 try:
@@ -2247,6 +2194,57 @@ def login_or_register_single_student(student, update_callback=None):
                             time.sleep(2)
                             retry_this_student = True
                             break
+
+                        # 3. reCAPTCHA yechilgach, darhol ENG YANGI (0 soniyalik) tasdiqlash kodini olish
+                        try:
+                            page.evaluate("""() => {
+                                const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                                inputs.forEach(inp => {
+                                    inp.value = '';
+                                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                    inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                });
+                            }""")
+                            code_inputs = page.locator(".verification-input, input[maxlength='1']")
+                            for idx_c in range(code_inputs.count()):
+                                code_inputs.nth(idx_c).fill("")
+                            time.sleep(0.3)
+                        except Exception:
+                            pass
+
+                        notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) toza tasdiqlash kodi olinmoqda ...")
+                        code, session_used = get_telegram_verification_code()
+                        student_idle_start = time.time()
+                        if code:
+                            notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
+                        if not code:
+                            time.sleep(2)
+                            code, session_used = get_telegram_verification_code()
+                            student_idle_start = time.time()
+                        if not code:
+                            notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
+                            continue
+
+                        # 4. Kodni katakchalarga chaqqonlik bilan kiritish (1 soniyada)
+                        page.evaluate("""(code) => {
+                            const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                            for (let i = 0; i < Math.min(6, inputs.length); i++) {
+                                inputs[i].focus();
+                                inputs[i].value = code[i];
+                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                                inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }""", code)
+                        time.sleep(0.3)
+                        try:
+                            code_inputs = page.locator(".verification-input, input[maxlength='1']")
+                            if code_inputs.count() >= 6:
+                                for idx_d, digit in enumerate(code[:6]):
+                                    code_inputs.nth(idx_d).click(force=True)
+                                    code_inputs.nth(idx_d).fill(digit)
+                        except Exception:
+                            pass
+                        time.sleep(0.5)
 
                         # Agar reload bo'lgan bo'lsa yoki kod o'chib ketgan bo'lsa, qayta to'ldirish:
                         try:
@@ -2961,63 +2959,10 @@ def process_single_student(student, update_callback=None):
                         except Exception:
                             pass
 
-                        # 2. Kod olish
-                        if not code:
-                            try:
-                                page.evaluate("""() => {
-                                    const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
-                                    inputs.forEach(inp => {
-                                        inp.value = '';
-                                        inp.dispatchEvent(new Event('input', { bubbles: true }));
-                                        inp.dispatchEvent(new Event('change', { bubbles: true }));
-                                    });
-                                }""")
-                                code_inputs = page.locator(".verification-input, input[maxlength='1']")
-                                for idx_c in range(code_inputs.count()):
-                                    code_inputs.nth(idx_c).fill("")
-                                time.sleep(0.5)
-                            except Exception:
-                                pass
-
-                            notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) tasdiqlash kodi olinmoqda ...")
-                            code, session_used = get_telegram_verification_code()
-                            student_idle_start = time.time()  # Kod kelgach taymer yangilanadi
-                            if code:
-                                notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
-                            if not code:
-                                time.sleep(3)
-                                code, session_used = get_telegram_verification_code()
-                                student_idle_start = time.time()
-                            if not code:
-                                notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
-                                continue
-
-                        # 3. Kodni katakchalarga kiritish
-                        page.evaluate("""(code) => {
-                            const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
-                            for (let i = 0; i < Math.min(6, inputs.length); i++) {
-                                inputs[i].focus();
-                                inputs[i].value = code[i];
-                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-                                inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }""", code)
-                        time.sleep(0.5)
-                        try:
-                            code_inputs = page.locator(".verification-input, input[maxlength='1']")
-                            if code_inputs.count() >= 6:
-                                for idx_d, digit in enumerate(code[:6]):
-                                    code_inputs.nth(idx_d).click(force=True)
-                                    code_inputs.nth(idx_d).fill(digit)
-                        except Exception:
-                            pass
-                        time.sleep(1)
-
-                        # 4. reCAPTCHA ni AI bilan yechish
+                        # 2. BIRINCHI BO'LIB reCAPTCHA ni AI bilan yechish (Kod eskirib qolmasligi uchun kapcha oldindan tayyorlanadi)
                         captcha_ok = handle_recaptcha(page)
                         if not captcha_ok:
                             print(f"[VERIFY RECAPTCHA BLOCKED] Kapcha bloklandi (Try again later)!", flush=True)
-                            # Agar sahifada 'qayta yuborish' tugmasi bo'lsa va 1-urinish bo'lsa, bosib ko'ramiz:
                             has_resend = False
                             if session_rotations < 2:
                                 try:
@@ -3038,6 +2983,57 @@ def process_single_student(student, update_callback=None):
                             time.sleep(2)
                             retry_this_student = True
                             break
+
+                        # 3. reCAPTCHA yechilgach, darhol ENG YANGI (0 soniyalik) tasdiqlash kodini olish
+                        try:
+                            page.evaluate("""() => {
+                                const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                                inputs.forEach(inp => {
+                                    inp.value = '';
+                                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                    inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                });
+                            }""")
+                            code_inputs = page.locator(".verification-input, input[maxlength='1']")
+                            for idx_c in range(code_inputs.count()):
+                                code_inputs.nth(idx_c).fill("")
+                            time.sleep(0.3)
+                        except Exception:
+                            pass
+
+                        notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) toza tasdiqlash kodi olinmoqda ...")
+                        code, session_used = get_telegram_verification_code()
+                        student_idle_start = time.time()
+                        if code:
+                            notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
+                        if not code:
+                            time.sleep(2)
+                            code, session_used = get_telegram_verification_code()
+                            student_idle_start = time.time()
+                        if not code:
+                            notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
+                            continue
+
+                        # 4. Kodni katakchalarga chaqqonlik bilan kiritish (1 soniyada)
+                        page.evaluate("""(code) => {
+                            const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                            for (let i = 0; i < Math.min(6, inputs.length); i++) {
+                                inputs[i].focus();
+                                inputs[i].value = code[i];
+                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                                inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }""", code)
+                        time.sleep(0.3)
+                        try:
+                            code_inputs = page.locator(".verification-input, input[maxlength='1']")
+                            if code_inputs.count() >= 6:
+                                for idx_d, digit in enumerate(code[:6]):
+                                    code_inputs.nth(idx_d).click(force=True)
+                                    code_inputs.nth(idx_d).fill(digit)
+                        except Exception:
+                            pass
+                        time.sleep(0.5)
 
                         # Agar reload bo'lgan bo'lsa yoki kod o'chib ketgan bo'lsa, qayta to'ldirish:
                         try:
