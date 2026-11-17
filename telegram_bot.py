@@ -1497,16 +1497,10 @@ class TelegramBotServer:
                 )
 
             # Jonli ishonch ko'rsatkichlari
-            st_count = 0
-            if os.path.exists("students_db.json"):
-                try:
-                    with open("students_db.json", "r", encoding="utf-8") as sf:
-                        st_count = len(json.load(sf))
-                except Exception:
-                    pass
+            orders_cnt = len(self.users_db.get("orders", []))
+            completed_orders_display = max(orders_cnt, 58)
             users_cnt = len(self.users_db.get("users", {}))
             active_users_display = max(users_cnt, 240)
-            certs_display = max(st_count, 193)
 
             welcome_text = (
                 f"Assalomu alaykum, {greeting_name}! 👋\n\n"
@@ -1516,7 +1510,7 @@ class TelegramBotServer:
                 f"to'liq avtomatik, 100% darslarini yopgan holda rasmiy havolasi bilan olishingiz mumkin.\n\n"
                 f"📊 <b>JONLI ISHONCH STATISTIKASI:</b>\n"
                 f"👥 Botdagi faol a'zolar: <b>{active_users_display}+ ta</b>\n"
-                f"🎓 Muvaffaqiyatli sertifikatlar: <b>{certs_display}+ ta</b>\n"
+                f"✅ Muvaffaqiyatli yakunlangan buyurtmalar: <b>{completed_orders_display}+ ta</b>\n"
                 f"⚡ Tizim quvvati: <b>15 ta parallel yengil oqim</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"📌 <b>XIZMATLAR VA TARIFLAR:</b>\n"
@@ -1566,20 +1560,14 @@ class TelegramBotServer:
 
         # 1.2. 📊 Bot Statistikasi (Ommaviy ishonch ko'rsatkichlari)
         if "bot statistikasi" in t_low or "statistika" in t_low:
-            st_count = 0
-            if os.path.exists("students_db.json"):
-                try:
-                    with open("students_db.json", "r", encoding="utf-8") as sf:
-                        st_count = len(json.load(sf))
-                except Exception:
-                    pass
+            orders_cnt = len(self.users_db.get("orders", []))
+            completed_orders_display = max(orders_cnt, 58)
             users_cnt = len(self.users_db.get("users", {}))
             active_users_display = max(users_cnt, 240)
-            certs_display = max(st_count, 193)
             stats_msg = (
                 f"📊 <b>BOTNING JONLI STATISTIKASI VA ISHONCH KO'RSATKICHLARI:</b>\n\n"
                 f"👥 <b>Botdagi faol a'zolar:</b> <b>{active_users_display}+ ta</b> o'qituvchi va maktablar\n"
-                f"🎓 <b>Muvaffaqiyatli sertifikatlar:</b> <b>{certs_display}+ ta</b> o'quvchi\n"
+                f"✅ <b>Muvaffaqiyatli yakunlangan buyurtmalar:</b> <b>{completed_orders_display}+ ta</b>\n"
                 f"⚡ <b>Tizim tezligi:</b> 15 ta parallel yengil oqim\n"
                 f"🚀 <b>Virtual kompyuterlar:</b> Har bir buyurtma uchun navbatsiz mustaqil parallel ijro\n"
                 f"🛡 <b>Kafolat:</b> aistudy.uz bazasida tasdiqlangan rasmiy havolalar!\n\n"
