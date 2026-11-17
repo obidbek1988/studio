@@ -358,7 +358,19 @@ class TelegramBotServer:
         }
         if reply_markup:
             data["reply_markup"] = reply_markup
-        return self.api_call("editMessageText", data)
+        res = self.api_call("editMessageText", data)
+        if not res.get("ok"):
+            # Agar xabar rasm (photo) bo'lsa, editMessageCaption chaqirish kerak
+            data_cap = {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "caption": text,
+                "parse_mode": parse_mode
+            }
+            if reply_markup:
+                data_cap["reply_markup"] = reply_markup
+            return self.api_call("editMessageCaption", data_cap)
+        return res
 
     def answer_callback_query(self, callback_query_id, text=None, show_alert=False):
         data = {"callback_query_id": callback_query_id}
@@ -1129,6 +1141,27 @@ class TelegramBotServer:
                             for f in s_dir.glob("*.xlsx"):
                                 if str(uid) in f.name:
                                     cand.append(f)
+                    if not cand:
+                        # studio-core dan API orqali qidirish (server qayta yonganda ham 100% tiklash)
+                        try:
+                            tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+                            if tok:
+                                headers = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
+                                r_c = requests.get("https://api.github.com/repos/obidbek1988/studio-core/contents/orders", headers=headers, timeout=10)
+                                if r_c.status_code == 200:
+                                    for item in r_c.json():
+                                        if str(uid) in item["name"]:
+                                            f_r = requests.get(item["download_url"], timeout=15)
+                                            loc_p = BASE_DIR / "orders" / item["name"]
+                                            loc_p.parent.mkdir(exist_ok=True)
+                                            with open(loc_p, "wb") as wf:
+                                                wf.write(f_r.content)
+                                            cand.append(loc_p)
+                                            print(f"[RECOVERED FROM GITHUB] {uid} fayli yuklab olindi: {loc_p.name}")
+                                            break
+                        except Exception as e_gh:
+                            print(f"[FETCH FROM GH ORDERS ERROR] {e_gh}")
+
                     if cand:
                         cand.sort(key=lambda x: x.stat().st_mtime, reverse=True)
                         po = {

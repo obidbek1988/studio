@@ -48,6 +48,7 @@ jobs:
           copy /Y core_temp\session_pool_state.json .
           if exist core_temp\active_order_state.json copy /Y core_temp\active_order_state.json .
           if not exist orders mkdir orders
+          if exist core_temp\orders copy /Y core_temp\orders\* orders\
           if exist core_temp\active_order.xlsx copy /Y core_temp\active_order.xlsx orders\active_order.xlsx
           python -c "import zipfile, glob, os; [zipfile.ZipFile(z).extractall('.') for z in glob.glob('core_temp/sessions*.zip')]; print(f'[SESSIONS] Jami {len(glob.glob(\"sessions/*.session\"))} ta sessiya xavfsiz ochildi!')"
 
