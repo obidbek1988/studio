@@ -55,18 +55,12 @@ def clean_latin_slug(text):
     return re.sub(r'[^a-z0-9]', '', lat)
 
 
-def send_page_screenshot_to_admin(page, caption=""):
-    """Brauzer ekranini olib to'g'ridan-to'g'ri Telegram Adminga yuborish"""
+def save_live_browser_screenshot(page):
+    """
+    Brauzerning oxirgi skrinshotini saqlab qo'yish (On-Demand Admin so'raganda ko'rsatish uchun).
+    Telegramga avtomatik keraksiz rasm tashlamaydi!
+    """
     try:
-        bot_token = os.environ.get("BOT_TOKEN") or ""
-        admin_id = os.environ.get("ADMIN_ID") or ""
-        if not bot_token or not admin_id:
-            cfg_p = BASE_DIR / "bot_config.json"
-            if cfg_p.exists():
-                with open(cfg_p, "r", encoding="utf-8") as f_cfg:
-                    cfg = json.load(f_cfg)
-                    bot_token = bot_token or cfg.get("bot_token", "")
-                    admin_id = admin_id or cfg.get("admin_id", "")
         if not page:
             return
         screenshot_bytes = page.screenshot(full_page=False)
@@ -75,14 +69,42 @@ def send_page_screenshot_to_admin(page, caption=""):
                 f_sc.write(screenshot_bytes)
         except Exception:
             pass
-        if bot_token and admin_id:
-            url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-            files = {"photo": ("screenshot.png", screenshot_bytes, "image/png")}
-            data = {"chat_id": int(admin_id), "caption": caption[:1024], "parse_mode": "HTML"}
-            requests.post(url, data=data, files=files, timeout=12)
-            print(f"[SCREENSHOT SENT TO ADMIN] {caption[:60]}", flush=True)
+
+        # studio-core ga ham fon rejimida sinxronlab qo'yish (Admin On-Demand tugmasini bosganda olishi uchun)
+        def _bg_push():
+            try:
+                import base64
+                tok = os.environ.get("GH_TOKEN") or ""
+                if not tok:
+                    cfg_f = BASE_DIR / "bot_config.json"
+                    if cfg_f.exists():
+                        try:
+                            tok = json.load(open(cfg_f, encoding="utf-8")).get("gh_token", "")
+                        except Exception:
+                            pass
+                if tok:
+                    b64_img = base64.b64encode(screenshot_bytes).decode("utf-8")
+                    h = {"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github.v3+json"}
+                    u = "https://api.github.com/repos/obidbek1988/studio-core/contents/latest_screen.png"
+                    r_chk = requests.get(u, headers=h, timeout=4)
+                    sha = r_chk.json().get("sha") if r_chk.status_code == 200 else None
+                    p_data = {"message": "Update live worker screenshot", "content": b64_img, "branch": "main"}
+                    if sha:
+                        p_data["sha"] = sha
+                    requests.put(u, headers=h, json=p_data, timeout=6)
+            except Exception:
+                pass
+
+        threading.Thread(target=_bg_push, daemon=True).start()
     except Exception as e_sc:
-        print(f"[SEND SCREENSHOT ERROR] {e_sc}", flush=True)
+        print(f"[SAVE SCREENSHOT ERROR] {e_sc}", flush=True)
+
+def send_page_screenshot_to_admin(page, caption=""):
+    """Faqat admin skrinshot tugmasini o'zi bosganda yoki muhim xatolikda chaqiriladi"""
+    try:
+        save_live_browser_screenshot(page)
+    except Exception:
+        pass
 
 def get_exact_page_error(page):
     """

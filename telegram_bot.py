@@ -1095,12 +1095,17 @@ class TelegramBotServer:
                 if not sc_bytes:
                     try:
                         import base64
-                        gh_tok = os.environ.get("GH_TOKEN") or ""
-                        r_sc = requests.get("https://api.github.com/repos/obidbek1988/studio-core/contents/latest_screen.png", headers={"Authorization": f"Bearer {gh_tok}", "Accept": "application/vnd.github.v3+json"}, timeout=6)
-                        if r_sc.status_code == 200:
-                            sc_bytes = base64.b64decode(r_sc.json()["content"])
-                    except Exception:
-                        pass
+                        gh_tok = get_gh_token()
+                        if gh_tok:
+                            r_sc = requests.get(
+                                "https://api.github.com/repos/obidbek1988/studio-core/contents/latest_screen.png",
+                                headers={"Authorization": f"Bearer {gh_tok}", "Accept": "application/vnd.github.v3+json"},
+                                timeout=10
+                            )
+                            if r_sc.status_code == 200:
+                                sc_bytes = base64.b64decode(r_sc.json()["content"])
+                    except Exception as e_sc_fetch:
+                        print(f"[FETCH WORKER SCREEN ERROR] {e_sc_fetch}")
 
                 if sc_bytes:
                     markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "screen_worker"}]]}
