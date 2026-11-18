@@ -56,21 +56,22 @@ def clean_latin_slug(text):
 
 def get_exact_page_error(page):
     """
-    Saytdagi qizil ogohlantirishlar, Toast xabarlar yoki inline xatolik matnini 
+    Saytdagi qizil ogohlantirishlar yoki inline xatolik matnini 
     aynan qanday bo'lsa shunday olib beruvchi funksiya.
+    Yashil muvaffaqiyat xabarlariga tegmaydi.
     """
     try:
         err = page.evaluate("""() => {
-            // 1. Toastr va bildirishnomalar (ngx-toastr, PrimeNG toast)
-            const toasts = document.querySelectorAll('.toast-message, .toast-error, .toast-title, .ngx-toastr, .p-toast-detail, .p-toast-message-content, [role="alert"]');
+            // Toast-success yoki muvaffaqiyat xabari bo'lsa, aslo xato emas!
+            const successToasts = document.querySelectorAll('.toast-success, .alert-success');
+            if (successToasts.length > 0) return null;
+
+            // Faqat qizil xatoliklar:
+            const toasts = document.querySelectorAll('.toast-error, .alert-danger, .error-message, .invalid-feedback, .text-red-500, [class*="text-red"]');
             for (const el of toasts) {
                 const txt = (el.innerText || el.textContent || '').trim();
-                if (txt && el.offsetParent !== null && txt.length > 2) return txt;
-            }
-            // 2. Qizil rangli xatolik bloklari
-            const redEls = document.querySelectorAll('.text-red-500, [class*="text-red"], .p-error, .p-inline-message, .alert-danger, .error-message, .invalid-feedback');
-            for (const el of redEls) {
-                const txt = (el.innerText || el.textContent || '').trim();
+                const low = txt.toLowerCase();
+                if (low.includes('muvaffaqiyat') || low.includes('success')) continue;
                 if (txt && el.offsetParent !== null && txt.length > 2) return txt;
             }
             return null;
@@ -2335,7 +2336,26 @@ def login_or_register_single_student(student, update_callback=None):
                             content = page.content().lower()
                             cur_url = page.url.lower()
 
-                            # 1. Saytdagi aniq qizil xatolik yoki Toast bildirishnomasini ushlash
+                            # 1. BIRINCHI NAVBATDA MUVAFFAQIYATNI TEKSHIRISH
+                            has_code_inputs = page.locator(".verification-input, input[maxlength='1']").count() > 0
+                            if "/auth/login" in cur_url or "muvaffaqiyatli" in content or ("tizimga kirish" in content and not has_code_inputs):
+                                print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
+                                registration_success = True
+                                record_session_success(session_used)
+                                notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
+                                # Muvaffaqiyat bo'lishi bilan DARHOL bazaga saqlab qo'yamiz!
+                                save_student_to_db(seria, number, {
+                                    "name": name,
+                                    "birthdate": birthdate_digits,
+                                    "seria": seria,
+                                    "number": number,
+                                    "login": target_email,
+                                    "password": default_password,
+                                    "status": "REGISTERED"
+                                })
+                                break
+
+                            # 2. Saytdagi aniq qizil xatolikni ushlash (agar muvaffaqiyat bo'lmasa)
                             detected_page_error = get_exact_page_error(page)
                             if detected_page_error:
                                 print(f"[EXACT RED ERROR ON PAGE] «{detected_page_error}»", flush=True)
@@ -2358,21 +2378,12 @@ def login_or_register_single_student(student, update_callback=None):
                                 print(f"[LIMIT DETECTED] {session_used} raqamida cheklov aniqlandi!")
                                 break
 
-                            # Ro'yxatdan muvaffaqiyatli o'tganini tekshirish:
-                            has_code_inputs = page.locator(".verification-input, input[maxlength='1']").count() > 0
-                            if "/auth/login" in cur_url or "muvaffaqiyatli" in content or ("tizimga kirish" in content and not has_code_inputs):
-                                print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
-                                registration_success = True
-                                record_session_success(session_used)
-                                notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
-                                break
-
                         if is_limited:
-                            # 5 TALIK LIMIT: Ushbu sessiya qat'iy chetlatiladi va yangi toza sessiyaga o'tiladi
+                            # 5 TALIK LIMIT: Xabarga REPLY qilib yangi kontakt biriktiriladi (sessiya saqlanadi!)
                             reason_msg = detected_page_error or "Bitta raqam cheklovi (5 ta o'quvchi to'ldi)"
-                            notify(f"⚠️ [{name}] {session_used} limitga uchradi: «{reason_msg}». Eskisi aslo ishlatilmaydi, yangi kontaktga o'tilmoqda...")
-                            new_sess = mark_session_exhausted(session_used, reason=reason_msg)
-                            notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
+                            notify(f"⚠️ [{name}] Limit aniqlandi («{reason_msg}»). Sessiya ichida REPLY orqali yangi kontakt ulanmoqda...")
+                            from session_pool import mark_session_exhausted
+                            mark_session_exhausted(session_used, reason=reason_msg)
                             code = None
                             session_used = None
                             try:
@@ -2398,16 +2409,13 @@ def login_or_register_single_student(student, update_callback=None):
                         if is_invalid:
                             clean_attempts += 1
                             reason_msg = detected_page_error or "Kod xato yoki eskirgan"
-                            # Kod xato yoki eskirgan bo'lsa ham eskisi qayta junatilmaydi, darhol yangi sessiya ulanadi!
                             try:
                                 from session_pool import mark_session_exhausted, invalidate_last_code
                                 invalidate_last_code(code, session_used)
-                                new_sess = mark_session_exhausted(session_used, reason=reason_msg)
+                                mark_session_exhausted(session_used, reason=reason_msg)
                             except Exception as e_inv:
                                 print(f"[INVALIDATE ERROR] {e_inv}")
-                            notify(f"⚠️ [{name}] Kod qabul qilinmadi («{reason_msg}»)! Eskisi chetlatildi, yangi sessiya ulanmoqda ({clean_attempts}/3)...")
-                            if new_sess:
-                                notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
+                            notify(f"⚠️ [{name}] Kod qabul qilinmadi («{reason_msg}»)! Yangi kontakt ulanmoqda ({clean_attempts}/3)...")
                             code = None
                             session_used = None
                             try:
@@ -3169,7 +3177,26 @@ def process_single_student(student, update_callback=None):
                             content = page.content().lower()
                             cur_url = page.url.lower()
 
-                            # 1. Saytdagi aniq qizil xatolik yoki Toast bildirishnomasini ushlash
+                            # 1. BIRINCHI NAVBATDA MUVAFFAQIYATNI TEKSHIRISH
+                            has_code_inputs = page.locator(".verification-input, input[maxlength='1']").count() > 0
+                            if "/auth/login" in cur_url or "muvaffaqiyatli" in content or ("tizimga kirish" in content and not has_code_inputs):
+                                print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
+                                registration_success = True
+                                record_session_success(session_used)
+                                notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
+                                # Muvaffaqiyat bo'lishi bilan DARHOL bazaga saqlab qo'yamiz!
+                                save_student_to_db(seria, number, {
+                                    "name": name,
+                                    "birthdate": birthdate_digits,
+                                    "seria": seria,
+                                    "number": number,
+                                    "login": target_email,
+                                    "password": default_password,
+                                    "status": "REGISTERED"
+                                })
+                                break
+
+                            # 2. Saytdagi aniq qizil xatolikni ushlash (agar muvaffaqiyat bo'lmasa)
                             detected_page_error = get_exact_page_error(page)
                             if detected_page_error:
                                 print(f"[EXACT RED ERROR ON PAGE] «{detected_page_error}»", flush=True)
@@ -3192,21 +3219,12 @@ def process_single_student(student, update_callback=None):
                                 print(f"[LIMIT DETECTED] {session_used} raqamida cheklov aniqlandi!")
                                 break
 
-                            # Ro'yxatdan muvaffaqiyatli o'tganini tekshirish:
-                            has_code_inputs = page.locator(".verification-input, input[maxlength='1']").count() > 0
-                            if "/auth/login" in cur_url or "muvaffaqiyatli" in content or ("tizimga kirish" in content and not has_code_inputs):
-                                print(f"[VERIFY SUCCESS] Server ro'yxatdan o'tishni muvaffaqiyatli tasdiqladi!")
-                                registration_success = True
-                                record_session_success(session_used)
-                                notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
-                                break
-
                         if is_limited:
-                            # 5 TALIK LIMIT: Ushbu sessiya qat'iy chetlatiladi va yangi toza sessiyaga o'tiladi
+                            # 5 TALIK LIMIT: Xabarga REPLY qilib yangi kontakt biriktiriladi (sessiya saqlanadi!)
                             reason_msg = detected_page_error or "Bitta raqam cheklovi (5 ta o'quvchi to'ldi)"
-                            notify(f"⚠️ [{name}] {session_used} limitga uchradi: «{reason_msg}». Eskisi aslo ishlatilmaydi, yangi kontaktga o'tilmoqda...")
-                            new_sess = mark_session_exhausted(session_used, reason=reason_msg)
-                            notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
+                            notify(f"⚠️ [{name}] Limit aniqlandi («{reason_msg}»). Sessiya ichida REPLY orqali yangi kontakt ulanmoqda...")
+                            from session_pool import mark_session_exhausted
+                            mark_session_exhausted(session_used, reason=reason_msg)
                             code = None
                             session_used = None
                             try:
@@ -3232,16 +3250,13 @@ def process_single_student(student, update_callback=None):
                         if is_invalid:
                             clean_attempts += 1
                             reason_msg = detected_page_error or "Kod xato yoki eskirgan"
-                            # Kod xato yoki eskirgan bo'lsa ham eskisi qayta junatilmaydi, darhol yangi sessiya ulanadi!
                             try:
                                 from session_pool import mark_session_exhausted, invalidate_last_code
                                 invalidate_last_code(code, session_used)
-                                new_sess = mark_session_exhausted(session_used, reason=reason_msg)
+                                mark_session_exhausted(session_used, reason=reason_msg)
                             except Exception as e_inv:
                                 print(f"[INVALIDATE ERROR] {e_inv}")
-                            notify(f"⚠️ [{name}] Kod qabul qilinmadi («{reason_msg}»)! Eskisi chetlatildi, yangi sessiya ulanmoqda ({clean_attempts}/3)...")
-                            if new_sess:
-                                notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
+                            notify(f"⚠️ [{name}] Kod qabul qilinmadi («{reason_msg}»)! Yangi kontakt ulanmoqda ({clean_attempts}/3)...")
                             code = None
                             session_used = None
                             try:

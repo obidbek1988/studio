@@ -211,19 +211,16 @@ def mark_session_unauthorized(session_name):
 
 def mark_session_exhausted(session_name, reason="limit_reached"):
     """
-    5 talik limit yoki taqiq aniqlanganda sessiyani navbat oxiriga olib,
-    zudlik bilan keyingi TOZA sessiyaga o'tish!
+    Cheksiz Telegram rejimida sessiya O'ZGARMAYDI!
+    Faqatgina keyingi gal REPLY orqali yangi kontakt raqami ulanishi belgilanadi.
     """
     state = load_state()
     clean = normalize_session_name(session_name)
-    if clean:
-        ex = state.get("exhausted", [])
-        if clean not in ex:
-            ex.append(clean)
-            state["exhausted"] = ex
+    print(f"[SESSION POOL] 5 talik limit aniqlandi ({reason}). Sessiya: {clean} SAQLAB QOLINDI, REPLY orqali yangi kontakt ulanadi!", flush=True)
+    state["needs_contact_rotation"] = True
+    state["contact_usage_count"] = 5
     save_state(state)
-    print(f"[SESSION POOL] 5 talik limit aniqlandi ({reason}). Sessiya: {clean} limitga qo'yildi va keyingi TOZA sessiyaga o'tilmoqda!", flush=True)
-    return rotate_to_next_session(clean)
+    return clean
 
 def record_session_success(session_name):
     state = load_state()
@@ -236,25 +233,19 @@ def record_session_success(session_name):
     # Kontakt orqali o'tganlar soni
     state["contact_usage_count"] = state.get("contact_usage_count", 0) + 1
     if state["contact_usage_count"] >= 5:
-        print(f"[SESSION POOL] {clean} 5 ta o'quvchini to'liq o'tkazdi (5 talik limitga yetdi). Keyingi toza sessiyaga o'tiladi!", flush=True)
-        ex = state.get("exhausted", [])
-        if clean not in ex:
-            ex.append(clean)
-            state["exhausted"] = ex
-        save_state(state)
-        rotate_to_next_session(clean)
-    else:
-        save_state(state)
+        state["needs_contact_rotation"] = True
+        print(f"[SESSION POOL] Ushbu kontakt 5 ta o'quvchini to'liq o'tkazdi. Keyingisi uchun REPLY orqali yangi kontakt ulanadi!", flush=True)
+    save_state(state)
     print(f"[SESSION POOL] {clean} orqali muvaffaqiyatli ro'yxatdan o'tdi (Jami: {counts[clean]} ta)", flush=True)
 
 async def change_contact_in_bot(client, bot, new_phone=None):
     """
-    @aistudy_uz_bot da kontaktni yangi raqamga almashtirish
+    @aistudy_uz_bot da xabarga REPLY qilib yangi kontakt biriktirish (Cheksiz rejim)
     """
     if not new_phone:
         new_phone = generate_random_uz_phone()
 
-    print(f"\n[UNLIMITED POOL] Yangi kontakt raqami biriktirilmoqda: {new_phone}...", flush=True)
+    print(f"\n[UNLIMITED POOL] Yangi kontakt raqami REPLY qilib biriktirilmoqda: {new_phone}...", flush=True)
 
     # 1. Sozlamalar tugmasi
     msgs = await client.get_messages(bot, limit=5)
@@ -313,16 +304,24 @@ async def change_contact_in_bot(client, bot, new_phone=None):
                 if change_clicked: break
         if change_clicked: break
 
-    # 3. Yangi kontakt kartasini yuborish
+    # Botning "Telefon raqamingizni yuboring" degan xabarini topish (ID sini olish)
+    prompt_msgs = await client.get_messages(bot, limit=3)
+    prompt_msg_id = prompt_msgs[0].id if prompt_msgs else None
+
+    # 3. Yangi kontakt kartasini BOTNING XABARIGA REPLY QILIB yuborish
     contact = InputMediaContact(
         phone_number=new_phone,
-        first_name="Talaba",
+        first_name=".",
         last_name="",
         vcard=""
     )
     try:
-        await client.send_file(bot, contact)
-        print(f"[UNLIMITED POOL] Yangi kontakt kartasi yuborildi: {new_phone}", flush=True)
+        if prompt_msg_id:
+            await client.send_file(bot, contact, reply_to=prompt_msg_id)
+            print(f"[UNLIMITED POOL] Xabarga (ID: {prompt_msg_id}) REPLY qilib yangi kontakt yuborildi: {new_phone}", flush=True)
+        else:
+            await client.send_file(bot, contact)
+            print(f"[UNLIMITED POOL] Yangi kontakt kartasi yuborildi: {new_phone}", flush=True)
         await asyncio.sleep(2.0)
     except Exception as e_send:
         print(f"[UNLIMITED POOL] Kontakt yuborishda xatolik: {e_send}", flush=True)
@@ -334,7 +333,7 @@ async def change_contact_in_bot(client, bot, new_phone=None):
     state["contact_usage_count"] = 0
     state["needs_contact_rotation"] = False
     save_state(state)
-    print(f"✅ [UNLIMITED POOL] Bot yangi raqamni qabul qildi: {new_phone} (Yangi 5 talik limit ochildi!)\n", flush=True)
+    print(f"✅ [UNLIMITED POOL] Bot yangi raqamni muvaffaqiyatli qabul qildi: {new_phone} (Yangi 5 talik limit ochildi!)\n", flush=True)
     return True, new_phone
 
 async def _fetch_from_one_session(session_name):
@@ -366,13 +365,17 @@ async def _fetch_from_one_session(session_name):
         # 1. Kontakt va limit holatini tekshirish
         state = load_state()
         state["active_session"] = clean_name
+        current_contact = state.get("current_contact_phone")
         usage_count = state.get("contact_usage_count", 0)
-        needs_rotation = state.get("needs_contact_rotation", False) or (usage_count >= 5)
+        needs_rotation = state.get("needs_contact_rotation", False) or (usage_count >= 5) or not current_contact
 
         if needs_rotation:
-            print(f"[SESSION POOL] {session_name} 5 talik limitga yetgan ({usage_count}/5). Keyingi sessiyaga o'tiladi!", flush=True)
-            await c.disconnect()
-            return None, "limit_exhausted"
+            print(f"[UNLIMITED POOL] {session_name}: Kontaktni yangilash talab etiladi (O'tilgan: {usage_count}/5). Xabarga REPLY qilib yangi kontakt biriktirilmoqda...", flush=True)
+            ok, new_phone = await change_contact_in_bot(c, bot)
+            if ok:
+                current_contact = new_phone
+                usage_count = 0
+                state = load_state()
 
         # 2. 'Kod olish' tugmasini 1 marta bosish
         initial_msgs = await c.get_messages(bot, limit=1)
