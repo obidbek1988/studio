@@ -420,13 +420,13 @@ class TelegramBotServer:
                     [{"text": "📊 Bot Statistikasi"}, {"text": "🛑 Bekor qilish (Otmen)"}],
                     [{"text": "🔄 Serverni qayta yoqish (Reboot)"}, {"text": "⏸ To'xtatish (Pauza)"}],
                     [{"text": "▶️ Qolgan joyidan davom ettirish"}, {"text": s_btn}],
-                    [{"text": "📸 Kompyuterdan Skrinshot"}, {"text": "📊 Tahlil va Jarayon"}],
+                    [{"text": "📸 Ekran Skrinshoti"}, {"text": "📄 Bo'sh Shablon (.xlsx)"}],
+                    [{"text": "🖥 AnyDesk Jonli Ulanish"}, {"text": "📊 Tahlil va Jarayon"}],
                     [{"text": "📥 Tayyor Sertifikatlar (Excel)"}, {"text": "🤖 Robot Agentlar Dashboard"}],
                     [{"text": "🌐 Web Any (Brauzerda)"}, {"text": "🧹 Keshni tozalash (Yangi buyurtma)"}],
                     [{"text": "🖥 Klaster (Kompyuterlar holati)"}, {"text": "⚡ Ishlarni bo'lish (Klasterga)"}],
                     [{"text": "⚡ Jonli Log (Console)"}, {"text": "💰 Foyda va Kassa"}],
-                    [{"text": "📸 Ekran Skrinshoti"}, {"text": "🖥 AnyDesk Jonli Ulanish"}],
-                    [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
+                    [{"text": "🛠 AI Dasturchiga yozish (Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": True,
@@ -1073,12 +1073,47 @@ class TelegramBotServer:
                 self.send_dashboard_view(chat_id, edit_msg_id=msg_id)
                 return
 
-            if data == "refresh_screen":
-                self.answer_callback_query(cb_id, "Yangi skrinshot olinmoqda... 📸")
+            if data in ("refresh_screen", "screen_main"):
+                self.answer_callback_query(cb_id, "Asosiy server ekrani olinmoqda... 📸")
                 screen_bytes = self.capture_screenshot()
                 if screen_bytes:
-                    markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "refresh_screen"}]]}
-                    self.send_photo(chat_id, screen_bytes, caption=f"📸 <b>Jonli Skrinshot:</b> {datetime.datetime.now().strftime('%H:%M:%S')}", reply_markup=markup)
+                    markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "screen_main"}]]}
+                    self.send_photo(chat_id, screen_bytes, caption=f"🖥 <b>Asosiy Server (24/7) Ekrani</b>\nVaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>", reply_markup=markup)
+                else:
+                    self.send_message(chat_id, "❌ Asosiy server ekranini olib bo'lmadi.")
+                return
+
+            if data == "screen_worker":
+                self.answer_callback_query(cb_id, "Buyurtma brauzeri ekrani olinmoqda... 📸")
+                worker_sc_path = BASE_DIR / "latest_screen.png"
+                if worker_sc_path.exists():
+                    try:
+                        with open(worker_sc_path, "rb") as sc_f:
+                            markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "screen_worker"}]]}
+                            self.send_photo(
+                                chat_id,
+                                sc_f.read(),
+                                caption=f"🚀 <b>Virtual Brauzer Ekrani (Sayt)</b>\nVaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>",
+                                reply_markup=markup
+                            )
+                            return
+                    except Exception:
+                        pass
+                self.send_message(chat_id, "⚠️ Hozirda faol buyurtma brauzeri ishlamayapti yoki skrinshot hali olinmadi.")
+                return
+
+            if data == "screen_all":
+                self.answer_callback_query(cb_id, "Barcha ekranlar olinmoqda... 📸")
+                s_bytes = self.capture_screenshot()
+                if s_bytes:
+                    self.send_photo(chat_id, s_bytes, caption="🖥 <b>Asosiy Server (24/7) Ekrani</b>")
+                w_path = BASE_DIR / "latest_screen.png"
+                if w_path.exists():
+                    try:
+                        with open(w_path, "rb") as f_w:
+                            self.send_photo(chat_id, f_w.read(), caption="🚀 <b>Virtual Brauzer Ekrani (Sayt)</b>")
+                    except Exception:
+                        pass
                 return
 
             if data == "refresh_logs":
@@ -1970,20 +2005,21 @@ class TelegramBotServer:
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return
 
-        # 14. 📸 Kompyuterdan Skrinshot
+        # 14. 📸 Ekran Skrinshoti
         if text in ("📸 Ekran Skrinshoti", "📸 Kompyuterdan Skrinshot", "/screen", "/skrin"):
-            self.send_message(chat_id, "📸 Skrinshot olinmoqda...")
-            screen_bytes = self.capture_screenshot()
-            if screen_bytes:
-                markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "refresh_screen"}]]}
-                self.send_photo(
-                    chat_id,
-                    screen_bytes,
-                    caption=f"📸 <b>Kompyuter ekrani</b>\nVaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>",
-                    reply_markup=markup
-                )
-            else:
-                self.send_message(chat_id, "❌ Skrinshot olishning imkoni bo'lmadi.")
+            msg = (
+                "📸 <b>Qaysi kompyuter/server ekranini ko'rmoqchisiz?</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Quyidagi tugmalardan birini tanlang:"
+            )
+            markup = {
+                "inline_keyboard": [
+                    [{"text": "🖥 Asosiy Server (24/7 AnyDesk)", "callback_data": "screen_main"}],
+                    [{"text": "🚀 Buyurtma Ishchisi (Virtual Brauzer)", "callback_data": "screen_worker"}],
+                    [{"text": "🌟 BARCHASINI BIRDAIGA OLISH", "callback_data": "screen_all"}]
+                ]
+            }
+            self.send_message(chat_id, msg, reply_markup=markup)
             return
 
         # 15. 🖥 AnyDesk Jonli Ulanish
