@@ -112,16 +112,20 @@ def format_clean_error_message(err_text):
     """
     if not err_text:
         return "Sayt javob bermadi"
-    low = err_text.lower()
+    clean_t = str(err_text).strip()
+    # Agar sekundomer/taymer bo'lsa:
+    if re.search(r'^\d{1,2}:\d{2}$', clean_t):
+        return f"⏳ Qayta kod olish taymeri: «{clean_t}» (Xatolik emas, kutilmoqda)"
+    low = clean_t.lower()
     if any(w in low for w in ["limit", "5 ta", "cheklangan", "ko'p urinish"]):
-        return f"📱 Raqam limiti to'lgan (Bitta raqamga 5 tagacha ruxsat): «{err_text}»"
+        return f"📱 Raqam limiti to'lgan (Bitta raqamga 5 tagacha ruxsat): «{clean_t}»"
     if any(w in low for w in ["topilmadi", "not found", "no content"]):
-        return f"❌ Davlat bazasida topilmadi (Seriya/raqam/sana xato): «{err_text}»"
+        return f"❌ Davlat bazasida topilmadi (Seriya/raqam/sana xato): «{clean_t}»"
     if any(w in low for w in ["allaqachon", "already"]):
-        return f"👤 O'quvchi allaqachon ro'yxatdan o'tgan: «{err_text}»"
+        return f"👤 O'quvchi allaqachon ro'yxatdan o'tgan: «{clean_t}»"
     if any(w in low for w in ["kod noto'g'ri", "notogri kod", "invalid code"]):
-        return f"⚠️ Tasdiqlash kodi noto'g'ri: «{err_text}»"
-    return f"⚠️ Sayt xabari: «{err_text}»"
+        return f"⚠️ Tasdiqlash kodi noto'g'ri: «{clean_t}»"
+    return f"⚠️ Sayt xabari: «{clean_t}»"
 
 def get_exact_page_error(page):
     """
@@ -141,6 +145,11 @@ def get_exact_page_error(page):
                 const txt = (el.innerText || el.textContent || '').trim();
                 const low = txt.toLowerCase();
                 if (low.includes('muvaffaqiyat') || low.includes('success')) continue;
+                // Sekundomer / Taymer (masalan: "1:27", "0:55", "1:04") aslo xato emas!
+                if (/^\\d{1,2}:\\d{2}$/.test(txt)) continue;
+                if (low.includes('qayta kod') || low.includes('soniya') || low.includes('daqiqa')) {
+                    if (/\\d{1,2}:\\d{2}/.test(txt)) continue;
+                }
                 if (txt && el.offsetParent !== null && txt.length > 2) return txt;
             }
             return null;
@@ -801,11 +810,13 @@ def get_telegram_verification_code():
             print("⚠️ Kod 6 ta raqamdan iborat bo'lishi kerak! Qayta tering.")
 
     try:
-        from session_pool import fetch_tg_code_from_pool
+        from session_pool import fetch_tg_code_from_pool, load_state
         code, session_used = fetch_tg_code_from_pool()
         if code:
-            print(f"[FETCH SUCCESS] Kod olindi: {code} (Sessiya: {session_used})", flush=True)
-            return code, session_used
+            st = load_state()
+            contact_used = st.get("current_contact_phone") or "Kontakt biriktirilgan"
+            print(f"[FETCH SUCCESS] Kod olindi: {code} (Sessiya: {session_used} | Kontakt: {contact_used})", flush=True)
+            return code, session_used, contact_used
     except Exception as e:
         print(f"Telegram to'g'ridan-to'g'ri kod olishda xatolik: {e}, fallback ishga tushmoqda...", flush=True)
 
@@ -2352,13 +2363,30 @@ def login_or_register_single_student(student, update_callback=None):
                             pass
 
                         notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) toza tasdiqlash kodi olinmoqda ...")
-                        code, session_used = get_telegram_verification_code()
+                        res_otp = get_telegram_verification_code()
+                        code = None
+                        session_used = "Sessiya"
+                        contact_used = "Kontakt biriktirilgan"
+                        if isinstance(res_otp, (list, tuple)):
+                            if len(res_otp) >= 3:
+                                code, session_used, contact_used = res_otp[0], res_otp[1], res_otp[2]
+                            elif len(res_otp) == 2:
+                                code, session_used = res_otp[0], res_otp[1]
+                        else:
+                            code = res_otp
+
                         student_idle_start = time.time()
                         if code:
-                            notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
+                            notify(f"📩 [{name}] Yangi kod olindi: <b>{code}</b> (📱 Sessiya: <code>{session_used}</code> | 👤 Kontakt: <code>{contact_used}</code>). Kiritilmoqda...")
                         if not code:
                             time.sleep(2)
-                            code, session_used = get_telegram_verification_code()
+                            res_otp = get_telegram_verification_code()
+                            if isinstance(res_otp, (list, tuple)):
+                                code = res_otp[0]
+                                session_used = res_otp[1] if len(res_otp) > 1 else session_used
+                                contact_used = res_otp[2] if len(res_otp) > 2 else contact_used
+                            else:
+                                code = res_otp
                             student_idle_start = time.time()
                         if not code:
                             notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
@@ -2403,9 +2431,16 @@ def login_or_register_single_student(student, update_callback=None):
                         except Exception:
                             pass
 
-                        # 5. FAQAT VA FAQAT kapcha muvaffaqiyatli yechilgandagina "Yuborish" bosiladi!
-                        page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first.click(force=True)
+                        # 5. "Yuborish" / "Tasdiqlash" tugmasini bosish (forma avtomat yuborilgan bo'lsa xato deb to'xtamaslik)
+                        try:
+                            sub_btn = page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first
+                            if sub_btn.is_visible(timeout=1500):
+                                sub_btn.click(force=True, timeout=2000)
+                        except Exception as e_click:
+                            print(f"[VERIFY BTN CLICK] Forma avtomat jo'natilgan yoki tugma yo'q: {e_click}", flush=True)
+
                         print(f"[VERIFY WAIT] Tasdiqlash kodi yuborildi ({code}). Server javobi sabr bilan kutilmoqda...", flush=True)
+                        save_live_browser_screenshot(page)
 
                         # Shoshilmasdan 15 soniya davomida server tasdig'ini kutamiz:
                         is_limited = False
@@ -3187,13 +3222,30 @@ def process_single_student(student, update_callback=None):
                             pass
 
                         notify(f"📩 [{name}] Telegram botdan (@aistudy_uz_bot) toza tasdiqlash kodi olinmoqda ...")
-                        code, session_used = get_telegram_verification_code()
+                        res_otp = get_telegram_verification_code()
+                        code = None
+                        session_used = "Sessiya"
+                        contact_used = "Kontakt biriktirilgan"
+                        if isinstance(res_otp, (list, tuple)):
+                            if len(res_otp) >= 3:
+                                code, session_used, contact_used = res_otp[0], res_otp[1], res_otp[2]
+                            elif len(res_otp) == 2:
+                                code, session_used = res_otp[0], res_otp[1]
+                        else:
+                            code = res_otp
+
                         student_idle_start = time.time()
                         if code:
-                            notify(f"📩 [{name}] Yangi kod olindi: {code} (Raqam: {session_used}). Kiritilmoqda...")
+                            notify(f"📩 [{name}] Yangi kod olindi: <b>{code}</b> (📱 Sessiya: <code>{session_used}</code> | 👤 Kontakt: <code>{contact_used}</code>). Kiritilmoqda...")
                         if not code:
                             time.sleep(2)
-                            code, session_used = get_telegram_verification_code()
+                            res_otp = get_telegram_verification_code()
+                            if isinstance(res_otp, (list, tuple)):
+                                code = res_otp[0]
+                                session_used = res_otp[1] if len(res_otp) > 1 else session_used
+                                contact_used = res_otp[2] if len(res_otp) > 2 else contact_used
+                            else:
+                                code = res_otp
                             student_idle_start = time.time()
                         if not code:
                             notify(f"⚠️ [{name}] Sessiyalardan kod olinmadi, qayta urinilmoqda...")
@@ -3238,9 +3290,16 @@ def process_single_student(student, update_callback=None):
                         except Exception:
                             pass
 
-                        # 5. FAQAT VA FAQAT kapcha muvaffaqiyatli yechilgandagina "Yuborish" bosiladi!
-                        page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first.click(force=True)
+                        # 5. "Yuborish" / "Tasdiqlash" tugmasini bosish (forma avtomat yuborilgan bo'lsa xato deb to'xtamaslik)
+                        try:
+                            sub_btn = page.locator("button:has-text('Yuborish'), button:has-text('Tasdiqlash')").first
+                            if sub_btn.is_visible(timeout=1500):
+                                sub_btn.click(force=True, timeout=2000)
+                        except Exception as e_click:
+                            print(f"[VERIFY BTN CLICK] Forma avtomat jo'natilgan yoki tugma yo'q: {e_click}", flush=True)
+
                         print(f"[VERIFY WAIT] Tasdiqlash kodi yuborildi ({code}). Server javobi sabr bilan kutilmoqda...", flush=True)
+                        save_live_browser_screenshot(page)
 
                         # Shoshilmasdan 15 soniya davomida server tasdig'ini kutamiz:
                         is_limited = False

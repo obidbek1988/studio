@@ -1087,32 +1087,41 @@ class TelegramBotServer:
                 self.answer_callback_query(cb_id, "Buyurtma brauzeri ekrani olinmoqda... 📸")
                 worker_sc_path = BASE_DIR / "latest_screen.png"
                 sc_bytes = None
-                if worker_sc_path.exists():
+                # Har doim eng yangi skrinshotni studio-core dan olishga urinamiz
+                try:
+                    import base64
+                    gh_tok = get_gh_token()
+                    if gh_tok:
+                        r_sc = requests.get(
+                            f"https://api.github.com/repos/obidbek1988/studio-core/contents/latest_screen.png?t={int(time.time())}",
+                            headers={"Authorization": f"token {gh_tok}", "Accept": "application/vnd.github.v3+json"},
+                            timeout=10
+                        )
+                        if r_sc.status_code == 200:
+                            sc_bytes = base64.b64decode(r_sc.json()["content"])
+                            try:
+                                with open(worker_sc_path, "wb") as f_w:
+                                    f_w.write(sc_bytes)
+                            except Exception:
+                                pass
+                except Exception as e_sc_fetch:
+                    print(f"[FETCH WORKER SCREEN ERROR] {e_sc_fetch}")
+
+                if not sc_bytes and worker_sc_path.exists():
                     try:
                         sc_bytes = open(worker_sc_path, "rb").read()
                     except Exception:
                         pass
-                if not sc_bytes:
-                    try:
-                        import base64
-                        gh_tok = get_gh_token()
-                        if gh_tok:
-                            r_sc = requests.get(
-                                "https://api.github.com/repos/obidbek1988/studio-core/contents/latest_screen.png",
-                                headers={"Authorization": f"Bearer {gh_tok}", "Accept": "application/vnd.github.v3+json"},
-                                timeout=10
-                            )
-                            if r_sc.status_code == 200:
-                                sc_bytes = base64.b64decode(r_sc.json()["content"])
-                    except Exception as e_sc_fetch:
-                        print(f"[FETCH WORKER SCREEN ERROR] {e_sc_fetch}")
 
                 if sc_bytes:
-                    markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "screen_worker"}]]}
+                    markup = {"inline_keyboard": [
+                        [{"text": "🔄 Yangilash", "callback_data": "screen_worker"}],
+                        [{"text": "🖥 Asosiy Server", "callback_data": "screen_main"}, {"text": "🌟 Hammasi", "callback_data": "screen_all"}]
+                    ]}
                     self.send_photo(
                         chat_id,
                         sc_bytes,
-                        caption=f"🚀 <b>Virtual Brauzer Ekrani (Sayt)</b>\nVaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>",
+                        caption=f"🚀 <b>Virtual Brauzer Ekrani (Buyurtma Ishchisi)</b>\nVaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n<i>(On-Demand Cloud Worker real vaqtda yangilanadi)</i>",
                         reply_markup=markup
                     )
                     return
@@ -1123,14 +1132,30 @@ class TelegramBotServer:
                 self.answer_callback_query(cb_id, "Barcha ekranlar olinmoqda... 📸")
                 s_bytes = self.capture_screenshot()
                 if s_bytes:
-                    self.send_photo(chat_id, s_bytes, caption="🖥 <b>Asosiy Server (24/7) Ekrani</b>")
-                w_path = BASE_DIR / "latest_screen.png"
-                if w_path.exists():
+                    self.send_photo(chat_id, s_bytes, caption="🖥 <b>Asosiy Server (24/7 Boshqaruv Markazi)</b>")
+                
+                # Worker ekranini ham olish
+                w_sc_bytes = None
+                try:
+                    import base64
+                    gh_tok = get_gh_token()
+                    if gh_tok:
+                        r_sc = requests.get(
+                            f"https://api.github.com/repos/obidbek1988/studio-core/contents/latest_screen.png?t={int(time.time())}",
+                            headers={"Authorization": f"token {gh_tok}", "Accept": "application/vnd.github.v3+json"},
+                            timeout=10
+                        )
+                        if r_sc.status_code == 200:
+                            w_sc_bytes = base64.b64decode(r_sc.json()["content"])
+                except Exception:
+                    pass
+                if not w_sc_bytes and (BASE_DIR / "latest_screen.png").exists():
                     try:
-                        with open(w_path, "rb") as f_w:
-                            self.send_photo(chat_id, f_w.read(), caption="🚀 <b>Virtual Brauzer Ekrani (Sayt)</b>")
+                        w_sc_bytes = open(BASE_DIR / "latest_screen.png", "rb").read()
                     except Exception:
                         pass
+                if w_sc_bytes:
+                    self.send_photo(chat_id, w_sc_bytes, caption="🚀 <b>Virtual Brauzer Ekrani (Buyurtma Ishchisi)</b>")
                 return
 
             if data == "refresh_logs":
