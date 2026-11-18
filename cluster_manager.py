@@ -40,8 +40,15 @@ class ClusterState:
             try:
                 with open(QUEUE_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self.tasks = data.get("tasks", [])
-                    self.orders = data.get("orders", {})
+                    if isinstance(data, dict):
+                        self.tasks = data.get("tasks", [])
+                        self.orders = data.get("orders", {})
+                    elif isinstance(data, list):
+                        self.tasks = data
+                        self.orders = {}
+                    else:
+                        self.tasks = []
+                        self.orders = {}
                 print(f"[CLUSTER] Baza yuklandi: {len(self.tasks)} ta vazifa mavjud.")
             except Exception as e:
                 print(f"[CLUSTER LOAD ERROR] {e}")

@@ -115,40 +115,76 @@ def save_state(state):
     except Exception:
         pass
 
+def rotate_to_next_session(current_session=None):
+    """
+    Keyingi toza, 5 talik limiti ochilmagan haqiqiy Telegram sessiyaga o'tish
+    """
+    state = load_state()
+    valid = state.get("valid_sessions", [])
+    raw_unauth = state.get("unauthorized", [])
+    unauth = {normalize_session_name(x) for x in raw_unauth if x}
+    unauth.add("998910448978")
+
+    exhausted_set = set(normalize_session_name(x) for x in state.get("exhausted", []) if x)
+    available = [s for s in valid if normalize_session_name(s) not in unauth and normalize_session_name(s) not in exhausted_set]
+
+    # Agar barcha mavjud sessiyalar ishlatilgan bo'lsa, ro'yxatni yangidan aylantirish
+    if not available:
+        available = [s for s in valid if normalize_session_name(s) not in unauth]
+        state["exhausted"] = []
+
+    if not available:
+        print("[SESSION ROTATION WARNING] Hech qanday toza sessiya topilmadi!", flush=True)
+        return None
+
+    cur = normalize_session_name(current_session) if current_session else normalize_session_name(state.get("active_session"))
+    if cur and cur in available:
+        idx = available.index(cur)
+        next_s = available[(idx + 1) % len(available)]
+    else:
+        next_s = available[0]
+
+    state["active_session"] = next_s
+    state["contact_usage_count"] = 0
+    state["needs_contact_rotation"] = False
+    save_state(state)
+    print(f"🔄 [SESSION ROTATE] Keyingi toza sessiyaga muvaffaqiyatli o'tildi: {cur} -> {next_s} (Yangi 5 talik limit!)", flush=True)
+    return next_s
+
 def get_candidate_sessions():
     """
     Aktiv sessiyani birinchi o'ringa qo'yadi.
+    Limitga uchraganlar navbat oxiriga olinadi, toza sessiyalar birinchi keladi.
     Qora ro'yxatga (unauthorized) tushgan sessiyalar (masalan: 998910448978) aslo olinmaydi!
     """
     state = load_state()
     primary = state.get("active_session")
     raw_unauth = state.get("unauthorized", [])
     unauth = {normalize_session_name(x) for x in raw_unauth if x}
-    # 998910448978 har qanday holatda ham qat'iy taqiqlangan!
     unauth.add("998910448978")
+    exhausted_set = set(normalize_session_name(x) for x in state.get("exhausted", []) if x)
+
+    valid = state.get("valid_sessions", [])
+    fresh = [normalize_session_name(s) for s in valid if normalize_session_name(s) not in unauth and normalize_session_name(s) not in exhausted_set]
+    exhausted_valid = [normalize_session_name(s) for s in valid if normalize_session_name(s) not in unauth and normalize_session_name(s) in exhausted_set]
 
     candidates = []
     if primary:
         clean_p = normalize_session_name(primary)
-        if clean_p and clean_p not in unauth:
+        if clean_p and clean_p not in unauth and clean_p not in exhausted_set:
             candidates.append(clean_p)
 
-    valid = state.get("valid_sessions", [])
-    for s in valid:
-        clean_s = normalize_session_name(s)
-        if clean_s and clean_s not in unauth and clean_s not in candidates:
-            candidates.append(clean_s)
+    for s in fresh:
+        if s and s not in candidates:
+            candidates.append(s)
 
-    # Agar 998330072869 hali qo'shilmagan bo'lsa va taqiqlanmagan bo'lsa, uni boshiga yoki zaxiraga qo'yish
-    if "998330072869" not in candidates and "998330072869" not in unauth:
-        candidates.insert(0, "998330072869")
+    for s in exhausted_valid:
+        if s and s not in candidates:
+            candidates.append(s)
 
-    # Agar hech qanday sessiya bo'lmasa, zaxira tg_session yoki 998330072869
     if not candidates:
         if os.path.exists(os.path.join(BASE_DIR, "tg_session.session")):
             candidates.append("tg_session")
-        else:
-            candidates.append("998330072869")
 
     return candidates
 
@@ -161,21 +197,26 @@ def mark_session_unauthorized(session_name):
     state["unauthorized"] = sorted(list(unauth))
     active = normalize_session_name(state.get("active_session"))
     if not active or active == clean:
-        state["active_session"] = None
-    save_state(state)
+        rotate_to_next_session(clean)
+    else:
+        save_state(state)
     print(f"[SESSION POOL] Sessiya NOFAOL (unauthorized): {clean} - Chetlatildi!", flush=True)
 
 def mark_session_exhausted(session_name, reason="limit_reached"):
     """
-    Cheksiz Telegram rejimida sessiya O'CHIRILMAYDI!
-    Faqatgina keyingi gal yangi kontakt raqami ulanishi belgilanadi.
+    5 talik limit yoki taqiq aniqlanganda sessiyani navbat oxiriga olib,
+    zudlik bilan keyingi TOZA sessiyaga o'tish!
     """
     state = load_state()
     clean = normalize_session_name(session_name)
-    print(f"[SESSION POOL] 5 talik limit yoki taqiq aniqlandi ({reason}). Sessiya: {clean} SAQLAB QOLINDI, yangi kontakt ulanadi!", flush=True)
-    state["needs_contact_rotation"] = True
-    state["contact_usage_count"] = 5
+    if clean:
+        ex = state.get("exhausted", [])
+        if clean not in ex:
+            ex.append(clean)
+            state["exhausted"] = ex
     save_state(state)
+    print(f"[SESSION POOL] 5 talik limit aniqlandi ({reason}). Sessiya: {clean} limitga qo'yildi va keyingi TOZA sessiyaga o'tilmoqda!", flush=True)
+    return rotate_to_next_session(clean)
 
 def record_session_success(session_name):
     state = load_state()
@@ -188,9 +229,15 @@ def record_session_success(session_name):
     # Kontakt orqali o'tganlar soni
     state["contact_usage_count"] = state.get("contact_usage_count", 0) + 1
     if state["contact_usage_count"] >= 5:
-        state["needs_contact_rotation"] = True
-        print(f"[SESSION POOL] Ushbu kontakt 5 ta o'quvchini to'liq o'tkazdi. Keyingisi uchun yangi kontakt ulanadi!", flush=True)
-    save_state(state)
+        print(f"[SESSION POOL] {clean} 5 ta o'quvchini to'liq o'tkazdi (5 talik limitga yetdi). Keyingi toza sessiyaga o'tiladi!", flush=True)
+        ex = state.get("exhausted", [])
+        if clean not in ex:
+            ex.append(clean)
+            state["exhausted"] = ex
+        save_state(state)
+        rotate_to_next_session(clean)
+    else:
+        save_state(state)
     print(f"[SESSION POOL] {clean} orqali muvaffaqiyatli ro'yxatdan o'tdi (Jami: {counts[clean]} ta)", flush=True)
 
 async def change_contact_in_bot(client, bot, new_phone=None):
@@ -309,20 +356,16 @@ async def _fetch_from_one_session(session_name):
         session_phone = f"+{me.phone}" if me and me.phone else session_name
         bot = await c.get_entity("@aistudy_uz_bot")
 
-        # 1. Kontakt holatini tekshirish
+        # 1. Kontakt va limit holatini tekshirish
         state = load_state()
         state["active_session"] = clean_name
-        current_contact = state.get("current_contact_phone")
         usage_count = state.get("contact_usage_count", 0)
-        needs_rotation = state.get("needs_contact_rotation", False) or (usage_count >= 5) or not current_contact
+        needs_rotation = state.get("needs_contact_rotation", False) or (usage_count >= 5)
 
         if needs_rotation:
-            print(f"[UNLIMITED POOL] Kontaktni yangilash talab etiladi (Hozirgi: {current_contact}, O'tilgan: {usage_count}/5)...", flush=True)
-            ok, new_phone = await change_contact_in_bot(c, bot)
-            if ok:
-                current_contact = new_phone
-                usage_count = 0
-                state = load_state()
+            print(f"[SESSION POOL] {session_name} 5 talik limitga yetgan ({usage_count}/5). Keyingi sessiyaga o'tiladi!", flush=True)
+            await c.disconnect()
+            return None, "limit_exhausted"
 
         # 2. 'Kod olish' tugmasini 1 marta bosish
         initial_msgs = await c.get_messages(bot, limit=1)
@@ -387,7 +430,7 @@ async def _fetch_from_one_session(session_name):
                     code = found_code
                     CONSUMED_CODES.add(code)
                     CONSUMED_MSG_IDS.add(m.id)
-                    phone_display = f"Sessiya: {session_phone} | Kontakt: {current_contact} ({usage_count + 1}/5)"
+                    phone_display = session_phone or clean_name
                     print(f"\n=======================================================", flush=True)
                     print(f"🎉 [TG KOD OLINDI] {code} [{phone_display}]", flush=True)
                     print(f"=======================================================\n", flush=True)
@@ -396,38 +439,9 @@ async def _fetch_from_one_session(session_name):
 
                 # Limitga yetganlik xabari
                 if any(w in txt_low for w in ["limit", "cheklov", "faqat bitta", "bitta telefon", "kechirasiz", "mumkin emas"]):
-                    print(f"⚠️ [TG BOT LIMIT] 5 talik limit aniqlandi! Avtomatik yangi kontaktga ulanmoqda...", flush=True)
-                    ok, new_phone = await change_contact_in_bot(c, bot)
-                    if ok:
-                        current_contact = new_phone
-                        usage_count = 0
-                        # Yangi limit ochildi, darhol 'Kod olish'ni qayta bosamiz
-                        await asyncio.sleep(1.5)
-                        new_msgs = await c.get_messages(bot, limit=3)
-                        for nm in new_msgs:
-                            if nm.buttons:
-                                for nr in nm.buttons:
-                                    for nb in nr:
-                                        if any(w in (nb.text or "").lower() for w in ["kod", "code", "verification", "tasdiqlash"]):
-                                            await nb.click()
-                                            break
-                        # Keyingi 10 soniyada yangi kodni kutish
-                        for _ in range(10):
-                            await asyncio.sleep(1.0)
-                            fresh = await c.get_messages(bot, limit=2)
-                            for fm in fresh:
-                                if not fm.out:
-                                    fm_txt = fm.text or ""
-                                    m_fresh = re.search(r'\b(\d{6})\b', fm_txt)
-                                    if m_fresh:
-                                        fresh_code = m_fresh.group(1)
-                                        phone_display = f"Sessiya: {session_phone} | Kontakt: {new_phone} (1/5)"
-                                        print(f"🎉 [TG KOD OLINDI (YANGI LIMIT)]: {fresh_code} [{phone_display}]", flush=True)
-                                        await c.disconnect()
-                                        return fresh_code, phone_display
+                    print(f"⚠️ [TG BOT LIMIT] {session_name} 5 talik limitga uchradi! Keyingi sessiyaga o'tiladi...", flush=True)
                     await c.disconnect()
                     return None, "limit_exhausted"
-
         await c.disconnect()
         return None, "no_code"
     except Exception as e:
@@ -435,9 +449,9 @@ async def _fetch_from_one_session(session_name):
         except: pass
         return None, str(e)
 
-def fetch_tg_code_from_pool(max_candidates=3):
+def fetch_tg_code_from_pool(max_candidates=5):
     """
-    Asosiy funksiya: 1 ta sessiyadan cheksiz kod olish.
+    Asosiy funksiya: Hovuzdan eng yangi va toza kodni olish.
     """
     candidates = get_candidate_sessions()
     if not candidates:

@@ -935,7 +935,8 @@ class TelegramBotServer:
                 import session_pool
                 state = session_pool.load_state()
                 valid = state.get("valid_sessions", [])
-                exclude = {"998330072869", "+998330072869", "tg_session", "tg_session.session", "998910448978"}
+                exhausted = set(session_pool.normalize_session_name(x) for x in state.get("exhausted", []))
+                exclude = {"998330072869", "+998330072869", "tg_session", "tg_session.session", "998910448978"}.union(exhausted)
                 fresh = [s for s in valid if session_pool.normalize_session_name(s) not in exclude and session_pool.normalize_session_name(s) not in ACTIVE_WORKER_SESSIONS]
                 if not fresh:
                     ACTIVE_WORKER_SESSIONS.clear()

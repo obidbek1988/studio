@@ -2296,11 +2296,23 @@ def login_or_register_single_student(student, update_callback=None):
                                 break
 
                         if is_limited:
-                            # LIMIT HISOBLANMAYDI! Yangi kontaktga o'tiladi
-                            notify(f"⚠️ [{name}] {session_used} limitga uchradi. Avtomatik yangi kontakt ulanmoqda...")
-                            mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                            # LIMIT HISOBLANMAYDI! Zudlik bilan yangi toza Telegram sessiyaga o'tiladi
+                            notify(f"⚠️ [{name}] {session_used} limitga uchradi (5 ta o'quvchi to'ldi). Avtomatik keyingi TOZA sessiyaga o'tilmoqda...")
+                            new_sess = mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                            notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
                             code = None
                             session_used = None
+                            try:
+                                page.evaluate("""() => {
+                                    const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                                    inputs.forEach(inp => {
+                                        inp.value = '';
+                                        inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                        inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                    });
+                                }""")
+                            except Exception:
+                                pass
                             try:
                                 resend_btn = page.locator("button:has-text('qayta'), a:has-text('qayta')")
                                 if resend_btn.count() > 0 and resend_btn.first.is_visible():
@@ -3085,11 +3097,23 @@ def process_single_student(student, update_callback=None):
                                 break
 
                         if is_limited:
-                            # LIMIT HISOBLANMAYDI! Yangi kontaktga o'tiladi
-                            notify(f"⚠️ [{name}] {session_used} limitga uchradi. Avtomatik yangi kontakt ulanmoqda...")
-                            mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                            # LIMIT HISOBLANMAYDI! Zudlik bilan yangi toza Telegram sessiyaga o'tiladi
+                            notify(f"⚠️ [{name}] {session_used} limitga uchradi (5 ta o'quvchi to'ldi). Avtomatik keyingi TOZA sessiyaga o'tilmoqda...")
+                            new_sess = mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                            notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
                             code = None
                             session_used = None
+                            try:
+                                page.evaluate("""() => {
+                                    const inputs = document.querySelectorAll('.verification-input, input[maxlength="1"]');
+                                    inputs.forEach(inp => {
+                                        inp.value = '';
+                                        inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                        inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                    });
+                                }""")
+                            except Exception:
+                                pass
                             try:
                                 resend_btn = page.locator("button:has-text('qayta'), a:has-text('qayta')")
                                 if resend_btn.count() > 0 and resend_btn.first.is_visible():
