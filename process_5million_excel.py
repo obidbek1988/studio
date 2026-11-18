@@ -31,6 +31,33 @@ def get_active_token_workers():
     global CURRENT_ACTIVE_TOKEN_WORKERS
     return CURRENT_ACTIVE_TOKEN_WORKERS
 
+def get_exact_page_error(page):
+    """
+    Saytdagi qizil ogohlantirishlar, Toast xabarlar yoki inline xatolik matnini 
+    aynan qanday bo'lsa shunday olib beruvchi funksiya.
+    """
+    try:
+        err = page.evaluate("""() => {
+            // 1. Toastr va bildirishnomalar (ngx-toastr, PrimeNG toast)
+            const toasts = document.querySelectorAll('.toast-message, .toast-error, .toast-title, .ngx-toastr, .p-toast-detail, .p-toast-message-content, [role="alert"]');
+            for (const el of toasts) {
+                const txt = (el.innerText || el.textContent || '').trim();
+                if (txt && el.offsetParent !== null && txt.length > 2) return txt;
+            }
+            // 2. Qizil rangli xatolik bloklari
+            const redEls = document.querySelectorAll('.text-red-500, [class*="text-red"], .p-error, .p-inline-message, .alert-danger, .error-message, .invalid-feedback');
+            for (const el of redEls) {
+                const txt = (el.innerText || el.textContent || '').trim();
+                if (txt && el.offsetParent !== null && txt.length > 2) return txt;
+            }
+            return null;
+        }""")
+        if err:
+            return str(err).strip()
+    except Exception:
+        pass
+    return None
+
 def is_order_cancelled():
     """Foydalanuvchi Telegram botdan 'Bekor qilish' (Otmen) yoki 'Keshni tozalash' bosganini tekshirish"""
     return (BASE_DIR / "cancel_order.flag").exists()
@@ -2271,10 +2298,24 @@ def login_or_register_single_student(student, update_callback=None):
                         # Shoshilmasdan 15 soniya davomida server tasdig'ini kutamiz:
                         is_limited = False
                         is_invalid = False
+                        detected_page_error = None
                         for wait_sec in range(1, 16):
                             time.sleep(1)
                             content = page.content().lower()
                             cur_url = page.url.lower()
+
+                            # 1. Saytdagi aniq qizil xatolik yoki Toast bildirishnomasini ushlash
+                            detected_page_error = get_exact_page_error(page)
+                            if detected_page_error:
+                                print(f"[EXACT RED ERROR ON PAGE] «{detected_page_error}»", flush=True)
+                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{detected_page_error}»")
+                                err_low = detected_page_error.lower()
+                                if any(w in err_low for w in ["cheklangan", "bitta telefon", "bitta raqam", "faqat 5", "limit", "foydalanuvchi"]):
+                                    is_limited = True
+                                    break
+                                else:
+                                    is_invalid = True
+                                    break
 
                             if "tasdiqlanmadi" in content or "boshqa tasdiqlash kodi" in content:
                                 is_invalid = True
@@ -2296,9 +2337,10 @@ def login_or_register_single_student(student, update_callback=None):
                                 break
 
                         if is_limited:
-                            # LIMIT HISOBLANMAYDI! Zudlik bilan yangi toza Telegram sessiyaga o'tiladi
-                            notify(f"⚠️ [{name}] {session_used} limitga uchradi (5 ta o'quvchi to'ldi). Avtomatik keyingi TOZA sessiyaga o'tilmoqda...")
-                            new_sess = mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                            # 5 TALIK LIMIT: Ushbu sessiya qat'iy chetlatiladi va yangi toza sessiyaga o'tiladi
+                            reason_msg = detected_page_error or "Bitta raqam cheklovi (5 ta o'quvchi to'ldi)"
+                            notify(f"⚠️ [{name}] {session_used} limitga uchradi: «{reason_msg}». Eskisi aslo ishlatilmaydi, yangi kontaktga o'tilmoqda...")
+                            new_sess = mark_session_exhausted(session_used, reason=reason_msg)
                             notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
                             code = None
                             session_used = None
@@ -2324,14 +2366,17 @@ def login_or_register_single_student(student, update_callback=None):
 
                         if is_invalid:
                             clean_attempts += 1
-                            # Kod xato yoki eskirgan bo'lsa, zudlik bilan kontaktni yangilaymiz!
+                            reason_msg = detected_page_error or "Kod xato yoki eskirgan"
+                            # Kod xato yoki eskirgan bo'lsa ham eskisi qayta junatilmaydi, darhol yangi sessiya ulanadi!
                             try:
                                 from session_pool import mark_session_exhausted, invalidate_last_code
                                 invalidate_last_code(code, session_used)
-                                mark_session_exhausted(session_used, reason="Kod xato yoki eskirgan")
+                                new_sess = mark_session_exhausted(session_used, reason=reason_msg)
                             except Exception as e_inv:
                                 print(f"[INVALIDATE ERROR] {e_inv}")
-                            notify(f"⚠️ [{name}] Kod eskirgan/xato! Zudlik bilan yangi kontaktga almashtirilmoqda ({clean_attempts}/3)...")
+                            notify(f"⚠️ [{name}] Kod qabul qilinmadi («{reason_msg}»)! Eskisi chetlatildi, yangi sessiya ulanmoqda ({clean_attempts}/3)...")
+                            if new_sess:
+                                notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
                             code = None
                             session_used = None
                             try:
@@ -2347,7 +2392,14 @@ def login_or_register_single_student(student, update_callback=None):
                             break
                         else:
                             clean_attempts += 1
-                            print(f"[VERIFY RETRY] 15 soniyada serverdan tasdiq kelmadi ({clean_attempts}/3), qayta urinilmoqda...")
+                            # 15 soniyada javob kelmagan bo'lsa ekrandan xatolikni tekshirish
+                            late_err = get_exact_page_error(page)
+                            if late_err:
+                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{late_err}»")
+                                new_sess = mark_session_exhausted(session_used, reason=late_err)
+                                notify(f"🔄 Yangi toza Telegram sessiyaga o'tildi: {new_sess}")
+                            else:
+                                notify(f"⏳ [{name}] 15 soniyada serverdan tasdiq kelmadi ({clean_attempts}/3), yangi kod bilan qayta urinilmoqda...")
 
                     if registration_success:
                         break
@@ -3072,10 +3124,24 @@ def process_single_student(student, update_callback=None):
                         # Shoshilmasdan 15 soniya davomida server tasdig'ini kutamiz:
                         is_limited = False
                         is_invalid = False
+                        detected_page_error = None
                         for wait_sec in range(1, 16):
                             time.sleep(1)
                             content = page.content().lower()
                             cur_url = page.url.lower()
+
+                            # 1. Saytdagi aniq qizil xatolik yoki Toast bildirishnomasini ushlash
+                            detected_page_error = get_exact_page_error(page)
+                            if detected_page_error:
+                                print(f"[EXACT RED ERROR ON PAGE] «{detected_page_error}»", flush=True)
+                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{detected_page_error}»")
+                                err_low = detected_page_error.lower()
+                                if any(w in err_low for w in ["cheklangan", "bitta telefon", "bitta raqam", "faqat 5", "limit", "foydalanuvchi"]):
+                                    is_limited = True
+                                    break
+                                else:
+                                    is_invalid = True
+                                    break
 
                             if "tasdiqlanmadi" in content or "boshqa tasdiqlash kodi" in content:
                                 is_invalid = True
@@ -3097,9 +3163,10 @@ def process_single_student(student, update_callback=None):
                                 break
 
                         if is_limited:
-                            # LIMIT HISOBLANMAYDI! Zudlik bilan yangi toza Telegram sessiyaga o'tiladi
-                            notify(f"⚠️ [{name}] {session_used} limitga uchradi (5 ta o'quvchi to'ldi). Avtomatik keyingi TOZA sessiyaga o'tilmoqda...")
-                            new_sess = mark_session_exhausted(session_used, reason="Bitta raqam cheklovi")
+                            # 5 TALIK LIMIT: Ushbu sessiya qat'iy chetlatiladi va yangi toza sessiyaga o'tiladi
+                            reason_msg = detected_page_error or "Bitta raqam cheklovi (5 ta o'quvchi to'ldi)"
+                            notify(f"⚠️ [{name}] {session_used} limitga uchradi: «{reason_msg}». Eskisi aslo ishlatilmaydi, yangi kontaktga o'tilmoqda...")
+                            new_sess = mark_session_exhausted(session_used, reason=reason_msg)
                             notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
                             code = None
                             session_used = None
@@ -3125,14 +3192,17 @@ def process_single_student(student, update_callback=None):
 
                         if is_invalid:
                             clean_attempts += 1
-                            # Kod xato yoki eskirgan bo'lsa, zudlik bilan kontaktni yangilaymiz!
+                            reason_msg = detected_page_error or "Kod xato yoki eskirgan"
+                            # Kod xato yoki eskirgan bo'lsa ham eskisi qayta junatilmaydi, darhol yangi sessiya ulanadi!
                             try:
                                 from session_pool import mark_session_exhausted, invalidate_last_code
                                 invalidate_last_code(code, session_used)
-                                mark_session_exhausted(session_used, reason="Kod xato yoki eskirgan")
+                                new_sess = mark_session_exhausted(session_used, reason=reason_msg)
                             except Exception as e_inv:
                                 print(f"[INVALIDATE ERROR] {e_inv}")
-                            notify(f"⚠️ [{name}] Kod eskirgan/xato! Zudlik bilan yangi kontaktga almashtirilmoqda ({clean_attempts}/3)...")
+                            notify(f"⚠️ [{name}] Kod qabul qilinmadi («{reason_msg}»)! Eskisi chetlatildi, yangi sessiya ulanmoqda ({clean_attempts}/3)...")
+                            if new_sess:
+                                notify(f"🔄 Yangi toza Telegram sessiya ulandi: {new_sess}")
                             code = None
                             session_used = None
                             try:
@@ -3148,7 +3218,14 @@ def process_single_student(student, update_callback=None):
                             break
                         else:
                             clean_attempts += 1
-                            print(f"[VERIFY RETRY] 15 soniyada serverdan tasdiq kelmadi ({clean_attempts}/3), qayta urinilmoqda...")
+                            # 15 soniyada javob kelmagan bo'lsa ekrandan xatolikni tekshirish
+                            late_err = get_exact_page_error(page)
+                            if late_err:
+                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{late_err}»")
+                                new_sess = mark_session_exhausted(session_used, reason=late_err)
+                                notify(f"🔄 Yangi toza Telegram sessiyaga o'tildi: {new_sess}")
+                            else:
+                                notify(f"⏳ [{name}] 15 soniyada serverdan tasdiq kelmadi ({clean_attempts}/3), yangi kod bilan qayta urinilmoqda...")
 
                     if registration_success:
                         break

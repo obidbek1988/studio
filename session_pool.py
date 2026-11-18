@@ -41,15 +41,22 @@ CONSUMED_CODES = set()
 CONSUMED_MSG_IDS = set()
 
 def invalidate_last_code(code=None, session_name=None):
-    """Eskirgan yoki xato deb topilgan kod va kontaktni bekor qilish"""
+    """Eskirgan yoki xato deb topilgan kod va kontaktni bekor qilish va yangi sessiyaga o'tish"""
     global CONSUMED_CODES
     if code:
         CONSUMED_CODES.add(str(code).strip())
     state = load_state()
-    state["needs_contact_rotation"] = True
-    state["contact_usage_count"] = 5
+    clean = normalize_session_name(session_name)
+    if clean:
+        ex = state.get("exhausted", [])
+        if clean not in ex:
+            ex.append(clean)
+            state["exhausted"] = ex
     save_state(state)
-    print(f"[SESSION POOL] Kod bekor qilindi ({code}) va yangi kontakt talab qilindi!", flush=True)
+    print(f"[SESSION POOL] Kod bekor qilindi ({code}). Sessiya: {clean} chetlatildi va keyingi TOZA sessiyaga o'tilmoqda!", flush=True)
+    if clean:
+        return rotate_to_next_session(clean)
+    return None
 
 def normalize_session_name(name):
     """Sessiya nomini tozalab, sof raqamlar ko'rinishiga keltiradi"""
