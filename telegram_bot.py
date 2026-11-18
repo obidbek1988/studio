@@ -1478,18 +1478,40 @@ class TelegramBotServer:
                             'total_price': 0,
                             'service_mode': mode
                         }
-                        with queue_lock:
-                            order_queue.append(adm_order)
-                        self.send_message(
-                            chat_id,
-                            f"👑 <b>Administrator buyurtmasi qabul qilindi!</b>\n\n"
-                            f"📁 Fayl: <b>{orig_fname}</b> ({student_cnt} ta o'quvchi, {srv_label})\n"
-                            f"🚀 <b>Asosiy Tezkor Serverda ish boshlandi!</b>\n"
-                            f"⚡ Quvvat: <b>15 ta parallel oqim faol!</b>",
-                            reply_markup=self.get_reply_keyboard(chat_id)
-                        )
-                        self.start_queue_worker()
-                        return
+
+                        # HECH QANDAY NAVBAT YO'Q! DARHOL ALOHIDA MUSTAQIL TEZKOR BULUT KOMPYUTERI YOQILSIN!
+                        try:
+                            ok, sess_assigned = self.dispatch_cloud_order_worker(adm_order)
+                        except Exception as e_disp:
+                            print(f"[ADMIN DISPATCH ERROR] {e_disp}")
+                            ok = False
+                            sess_assigned = str(e_disp)
+
+                        if ok:
+                            self.send_message(
+                                chat_id,
+                                f"👑 <b>Administrator buyurtmasi uchun YANGI TEZKOR BULUT SERVERI ishga tushdi!</b>\n\n"
+                                f"📁 Fayl: <b>{orig_fname}</b> ({student_cnt} ta o'quvchi, {srv_label})\n"
+                                f"📱 Biriktirilgan Sessiya: <code>{sess_assigned}</code>\n"
+                                f"⚡ <b>Navbat yo'q:</b> Alohida virtual kompyuterda parallel ish boshlandi!\n"
+                                f"🚀 Quvvat: <b>15 ta parallel oqim faol!</b>",
+                                reply_markup=self.get_reply_keyboard(chat_id)
+                            )
+                            return
+                        else:
+                            # Agar dispatch bo'lmasa, zaxira sifatida lokal oqimga beriladi
+                            with queue_lock:
+                                order_queue.append(adm_order)
+                            self.send_message(
+                                chat_id,
+                                f"👑 <b>Administrator buyurtmasi qabul qilindi!</b>\n\n"
+                                f"📁 Fayl: <b>{orig_fname}</b> ({student_cnt} ta o'quvchi, {srv_label})\n"
+                                f"🚀 <b>Asosiy Serverda ish boshlandi!</b>\n"
+                                f"⚡ Quvvat: <b>15 ta parallel oqim faol!</b>",
+                                reply_markup=self.get_reply_keyboard(chat_id)
+                            )
+                            self.start_queue_worker()
+                            return
 
                     # 2. AGAR MIJOZ YUBORGAN BO'LSA:
                     mode = user_selected_service.get(chat_id)
