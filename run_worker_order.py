@@ -151,13 +151,12 @@ def main():
     import process_5million_excel
 
     def tg_callback(msg):
-        print(f"[WORKER LOG] {msg}", flush=True)
-        # Faqat muhim xabarlarni telegramga yuborish
         m_str = str(msg).strip()
-        if any(k in m_str for k in ["✅", "⚠️", "📩", "Token olindi", "Buyurtma qabul"]):
-            send_telegram_msg(bot_token, chat_id, m_str)
-            if admin_id and admin_id != chat_id and ("yakunlandi" in m_str or "Token olindi" in m_str):
-                send_telegram_msg(bot_token, admin_id, f"👤 [{user_name}]: {m_str}")
+        print(f"[WORKER LOG] {m_str}", flush=True)
+        # Har bir xabarni jonli ravishda mijozga ham, adminga ham yuboramiz!
+        send_telegram_msg(bot_token, chat_id, m_str)
+        if admin_id and admin_id != chat_id:
+            send_telegram_msg(bot_token, admin_id, f"👤 [{user_name}]:\n{m_str}")
 
     start_ts = time.time()
     try:

@@ -2984,41 +2984,23 @@ def process_single_student(student, update_callback=None):
                         if direct_login_ok:
                             break
 
-                        # 2. Agar to'g'ridan-to'g'ri kirmasa, tiklash orqali parolni yangilaymiz
-                        notify(f"🔑 [{name}] Allaqachon ro'yxatdan o'tgan! Login/PINFL ({pnfl}) orqali hisob tiklanmoqda...")
-                        rec_ok, rec_token = recover_and_login_student(page, pnfl, name=name, notify=notify, default_password=default_password)
-                        if rec_ok and rec_token:
-                            token = rec_token
-                            target_email = pnfl
-                            registration_success = True
-                            save_student_to_db(seria, number, {
-                                "name": name,
-                                "birthdate": birthdate_digits,
-                                "seria": seria,
-                                "number": number,
-                                "login": pnfl,
-                                "password": default_password,
-                                "status": "REGISTERED"
-                            })
-                            break
-                        else:
-                            if rec_token == "personal_phone":
-                                browser.close()
-                                notify(f"⚠️ [{name}] Shaxsiy raqamga ulangan, bizning bazada yo'q. Tashlab ketilmoqda...")
-                                return False, "Shaxsiy raqamga ulangan (Bazada yo'q)", "", ""
-                            if student_cycle < 3:
-                                print(f"[PINFL RETRY] Tiklashda kapcha bloki, IP yangilanib qayta urinilmoqda...")
-                                switch_ip()
-                                time.sleep(2)
-                                continue
-                            else:
-                                browser.close()
-                                notify(f"⚠️ [{name}] PINFL ({pnfl}) orqali hisobni tiklab bo'lmadi")
-                                return False, "PINFL orqali tiklab bo'lmadi", "", ""
+                        # Begona shaxsiy hisoblar uchun vaqt yo'qotmaymiz — loginini saqlab, darhol keyingisiga o'tamiz!
+                        browser.close()
+                        save_student_to_db(seria, number, {
+                            "name": name,
+                            "birthdate": birthdate_digits,
+                            "seria": seria,
+                            "number": number,
+                            "login": pnfl,
+                            "status": "ALREADY_REGISTERED_NO_PASSWORD"
+                        })
+                        msg_no_pwd = f"Allaqachon ro'yxatdan o'tgan (Login: {pnfl}, Parol yo'q)"
+                        notify(f"⚠️ [{name}] {msg_no_pwd}. Keyingi o'quvchiga o'tilmoqda...")
+                        return False, None, pnfl, "", msg_no_pwd
                     else:
                         browser.close()
-                        notify(f"⚠️ [{name}] Bu o'quvchi ALLAQACHON ro'yxatdan o'tgan (PINFL topilmadi)!")
-                        return False, "Allaqachon ro'yxatdan o'tgan (Login/Parol kerak)", "", ""
+                        notify(f"⚠️ [{name}] Bu o'quvchi ALLAQACHON ro'yxatdan o'tgan (Login topilmadi)!")
+                        return False, None, "", "", "Allaqachon ro'yxatdan o'tgan (Login/Parol kerak)"
 
                 if not is_new_student and not is_already_registered:
                     if student_cycle < 3:

@@ -1086,19 +1086,31 @@ class TelegramBotServer:
             if data == "screen_worker":
                 self.answer_callback_query(cb_id, "Buyurtma brauzeri ekrani olinmoqda... 📸")
                 worker_sc_path = BASE_DIR / "latest_screen.png"
+                sc_bytes = None
                 if worker_sc_path.exists():
                     try:
-                        with open(worker_sc_path, "rb") as sc_f:
-                            markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "screen_worker"}]]}
-                            self.send_photo(
-                                chat_id,
-                                sc_f.read(),
-                                caption=f"🚀 <b>Virtual Brauzer Ekrani (Sayt)</b>\nVaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>",
-                                reply_markup=markup
-                            )
-                            return
+                        sc_bytes = open(worker_sc_path, "rb").read()
                     except Exception:
                         pass
+                if not sc_bytes:
+                    try:
+                        import base64
+                        gh_tok = os.environ.get("GH_TOKEN") or ""
+                        r_sc = requests.get("https://api.github.com/repos/obidbek1988/studio-core/contents/latest_screen.png", headers={"Authorization": f"Bearer {gh_tok}", "Accept": "application/vnd.github.v3+json"}, timeout=6)
+                        if r_sc.status_code == 200:
+                            sc_bytes = base64.b64decode(r_sc.json()["content"])
+                    except Exception:
+                        pass
+
+                if sc_bytes:
+                    markup = {"inline_keyboard": [[{"text": "🔄 Yangilash", "callback_data": "screen_worker"}]]}
+                    self.send_photo(
+                        chat_id,
+                        sc_bytes,
+                        caption=f"🚀 <b>Virtual Brauzer Ekrani (Sayt)</b>\nVaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>",
+                        reply_markup=markup
+                    )
+                    return
                 self.send_message(chat_id, "⚠️ Hozirda faol buyurtma brauzeri ishlamayapti yoki skrinshot hali olinmadi.")
                 return
 
