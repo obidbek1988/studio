@@ -3604,6 +3604,13 @@ def process_excel_order(excel_path, update_callback=None, service_mode="full_cer
                 })
                 continue
 
+            # 1.1 Excelda oldin "Allaqachon ro'yxatdan o'tgan" deb belgilangan bo'lsa, qayta tekshirmaymiz:
+            if any(x in cur_cert.lower() for x in ["allaqachon", "parol yo'q", "topilmadi"]):
+                sheet.cell(r, time_col).value = "0 soniya (Excelda bor)"
+                if update_callback:
+                    update_callback(f"{idx_str} ⏭ <b>{name_val}</b> ({seria} {num}): Excelda bor ({cur_cert}). 0 soniyada o'tkazildi.")
+                continue
+
             # 2. Bazadan tekshirish
             db_rec = get_student_from_db(seria, num)
             cert_link = (db_rec.get("certificate") or db_rec.get("cert_url") or "") if db_rec else ""
@@ -3623,6 +3630,23 @@ def process_excel_order(excel_path, update_callback=None, service_mode="full_cer
                         f"🎓 Sertifikat allaqachon olingan!\n"
                         f"⏱ Vaqt: <b>0 soniya</b> (Bazada bor edi)\n"
                         f"🔗 {cert_link}"
+                    )
+                continue
+
+            # 2.1 Bazada bu o'quvchi "Allaqachon ro'yxatdan o'tgan (Parol yo'q)" deb saqlangan bo'lsa:
+            if db_rec and db_rec.get("status") in ["ALREADY_REGISTERED_NO_PASSWORD", "NO_DOC", "INVALID_DOC"]:
+                existing_login = db_rec.get("login", "")
+                sheet.cell(r, cert_col).value = "Allaqachon ro'yxatdan o'tgan (Parol yo'q)"
+                if existing_login:
+                    sheet.cell(r, email_col).value = existing_login
+                sheet.cell(r, time_col).value = "0 soniya (Bazada bor - Parol yo'q)"
+                with excel_lock:
+                    wb.save(excel_path)
+                print(f"[FAST SKIP DB] {name_val} ({seria} {num}): Bazada 'Allaqachon ro'yxatdan o'tgan (Parol yo'q)' holatida bor, 0 soniyada o'tkazildi.")
+                if update_callback:
+                    update_callback(
+                        f"{idx_str} ⏭ <b>{name_val}</b> ({seria} {num}): Bazada bor — Allaqachon ro'yxatdan o'tgan (Login: {existing_login or 'bor'}, Parol yo'q).\n"
+                        f"⏱ Vaqt yo'qotmaslik uchun <b>0 soniyada o'tkazib yuborildi</b>."
                     )
                 continue
 
