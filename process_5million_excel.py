@@ -31,6 +31,29 @@ def get_active_token_workers():
     global CURRENT_ACTIVE_TOKEN_WORKERS
     return CURRENT_ACTIVE_TOKEN_WORKERS
 
+CYRILLIC_TO_LATIN_MAP = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'j',
+    'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+    'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'x', 'ц': 'ts',
+    'ч': 'ch', 'ш': 'sh', 'щ': 'sh', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu',
+    'я': 'ya', 'ў': 'o', 'қ': 'q', 'ғ': 'g', 'ҳ': 'h',
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'J',
+    'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
+    'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'X', 'Ц': 'Ts',
+    'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Sh', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu',
+    'Я': 'Ya', 'Ў': 'O', 'Қ': 'Q', 'Ғ': 'G', 'Ҳ': 'H'
+}
+
+def to_latin(text):
+    if not text:
+        return ""
+    return "".join(CYRILLIC_TO_LATIN_MAP.get(c, c) for c in str(text))
+
+def clean_latin_slug(text):
+    """Faqatgina a-z va 0-9 dan iborat toza lotin harflarini qoldirish"""
+    lat = to_latin(text).lower()
+    return re.sub(r'[^a-z0-9]', '', lat)
+
 def get_exact_page_error(page):
     """
     Saytdagi qizil ogohlantirishlar, Toast xabarlar yoki inline xatolik matnini 
@@ -1638,15 +1661,22 @@ def login_or_register_single_student(student, update_callback=None):
             except Exception as e:
                 print(f"[CALLBACK ERROR] {e}")
 
-    name_parts = [p.capitalize() for p in re.findall(r'[a-zA-Z]+', name)]
+    lat_name = to_latin(name)
+    name_parts = [p.capitalize() for p in re.findall(r'[a-zA-Z]+', lat_name)]
     first_name = name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Oquvchi")
     birth_year = birthdate_digits[4:] if len(birthdate_digits) >= 8 else "2015"
     student_password = f"{first_name}{birth_year}"
-    default_password = student.get("existing_password") or ("Maktab29" if "raxmonova" in name.lower() else student_password)
+    default_password = student.get("existing_password") or ("Maktab29" if "raxmonova" in lat_name.lower() else student_password)
 
-    email_clean = "".join([c for c in name.lower() if c.isalnum()])[:8]
+    email_clean = clean_latin_slug(name)[:8] or "student"
     generated_email = f"maktab.{email_clean}.{number[-4:]}@gmail.com"
     target_email = student.get("existing_login") or generated_email
+    if target_email:
+        target_email = to_latin(target_email)
+        target_email = re.sub(r'[^a-zA-Z0-9@._-]', '', target_email)
+    if default_password:
+        default_password = to_latin(default_password)
+        default_password = re.sub(r'[^a-zA-Z0-9!@#$%^&*()_+=-]', '', default_password)
     skip_registration = bool(student.get("existing_login") and student.get("existing_password"))
 
     # Bazada oldin muvaffaqiyatli ro'yxatdan o'tgan bo'lsa, avtomatik login/parolini olamiz
@@ -2171,7 +2201,8 @@ def login_or_register_single_student(student, update_callback=None):
                             c_text = page.content().lower()
                             if "mavjud" in c_text or "band" in c_text:
                                 import random
-                                target_email = f"maktab.{name.split()[0].lower()[:6]}.{random.randint(1000, 9999)}@gmail.com"
+                                slug_rand = clean_latin_slug(name.split()[0])[:6] or "student"
+                                target_email = f"maktab.{slug_rand}.{random.randint(1000, 9999)}@gmail.com"
                                 print(f"[EMAIL TAKEN] Yangi email tanlandi: {target_email}", flush=True)
                                 u_form.first.fill(target_email)
                                 time.sleep(1)
@@ -2471,15 +2502,22 @@ def process_single_student(student, update_callback=None):
             except Exception as e:
                 print(f"[CALLBACK ERROR] {e}")
 
-    name_parts = [p.capitalize() for p in re.findall(r'[a-zA-Z]+', name)]
+    lat_name = to_latin(name)
+    name_parts = [p.capitalize() for p in re.findall(r'[a-zA-Z]+', lat_name)]
     first_name = name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Oquvchi")
     birth_year = birthdate_digits[4:] if len(birthdate_digits) >= 8 else "2015"
     student_password = f"{first_name}{birth_year}"
-    default_password = student.get("existing_password") or ("Maktab29" if "raxmonova" in name.lower() else student_password)
+    default_password = student.get("existing_password") or ("Maktab29" if "raxmonova" in lat_name.lower() else student_password)
 
-    email_clean = "".join([c for c in name.lower() if c.isalnum()])[:8]
+    email_clean = clean_latin_slug(name)[:8] or "student"
     generated_email = f"maktab.{email_clean}.{number[-4:]}@gmail.com"
     target_email = student.get("existing_login") or generated_email
+    if target_email:
+        target_email = to_latin(target_email)
+        target_email = re.sub(r'[^a-zA-Z0-9@._-]', '', target_email)
+    if default_password:
+        default_password = to_latin(default_password)
+        default_password = re.sub(r'[^a-zA-Z0-9!@#$%^&*()_+=-]', '', default_password)
     skip_registration = bool(student.get("existing_login") and student.get("existing_password"))
 
     # Bazada oldin muvaffaqiyatli ro'yxatdan o'tgan bo'lsa, avtomatik login/parolini olamiz
@@ -2997,7 +3035,8 @@ def process_single_student(student, update_callback=None):
                             c_text = page.content().lower()
                             if "mavjud" in c_text or "band" in c_text:
                                 import random
-                                target_email = f"maktab.{name.split()[0].lower()[:6]}.{random.randint(1000, 9999)}@gmail.com"
+                                slug_rand = clean_latin_slug(name.split()[0])[:6] or "student"
+                                target_email = f"maktab.{slug_rand}.{random.randint(1000, 9999)}@gmail.com"
                                 print(f"[EMAIL TAKEN] Yangi email tanlandi: {target_email}", flush=True)
                                 u_form.first.fill(target_email)
                                 time.sleep(1)
