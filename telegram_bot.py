@@ -425,7 +425,7 @@ class TelegramBotServer:
                     [{"text": "🌐 Web Any (Brauzerda)"}, {"text": "🧹 Keshni tozalash (Yangi buyurtma)"}],
                     [{"text": "🖥 Klaster (Kompyuterlar holati)"}, {"text": "⚡ Ishlarni bo'lish (Klasterga)"}],
                     [{"text": "⚡ Jonli Log (Console)"}, {"text": "💰 Foyda va Kassa"}],
-                    [{"text": "📄 Bo'sh Shablon (.xlsx)"}, {"text": "🖥 AnyDesk Jonli Ulanish"}],
+                    [{"text": "📸 Ekran Skrinshoti"}, {"text": "🖥 AnyDesk Jonli Ulanish"}],
                     [{"text": "🛠 AI Dasturchiga yozish (Skrinshot / Taklif)"}],
                 ],
                 "resize_keyboard": True,
@@ -1971,7 +1971,7 @@ class TelegramBotServer:
             return
 
         # 14. 📸 Kompyuterdan Skrinshot
-        if text in ("📸 Kompyuterdan Skrinshot", "/screen", "/skrin"):
+        if text in ("📸 Ekran Skrinshoti", "📸 Kompyuterdan Skrinshot", "/screen", "/skrin"):
             self.send_message(chat_id, "📸 Skrinshot olinmoqda...")
             screen_bytes = self.capture_screenshot()
             if screen_bytes:

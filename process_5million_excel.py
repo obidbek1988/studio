@@ -54,6 +54,36 @@ def clean_latin_slug(text):
     lat = to_latin(text).lower()
     return re.sub(r'[^a-z0-9]', '', lat)
 
+
+def send_page_screenshot_to_admin(page, caption=""):
+    """Brauzer ekranini olib to'g'ridan-to'g'ri Telegram Adminga yuborish"""
+    try:
+        bot_token = os.environ.get("BOT_TOKEN") or ""
+        admin_id = os.environ.get("ADMIN_ID") or ""
+        if not bot_token or not admin_id:
+            cfg_p = BASE_DIR / "bot_config.json"
+            if cfg_p.exists():
+                with open(cfg_p, "r", encoding="utf-8") as f_cfg:
+                    cfg = json.load(f_cfg)
+                    bot_token = bot_token or cfg.get("bot_token", "")
+                    admin_id = admin_id or cfg.get("admin_id", "")
+        if not page:
+            return
+        screenshot_bytes = page.screenshot(full_page=False)
+        try:
+            with open(BASE_DIR / "latest_screen.png", "wb") as f_sc:
+                f_sc.write(screenshot_bytes)
+        except Exception:
+            pass
+        if bot_token and admin_id:
+            url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+            files = {"photo": ("screenshot.png", screenshot_bytes, "image/png")}
+            data = {"chat_id": int(admin_id), "caption": caption[:1024], "parse_mode": "HTML"}
+            requests.post(url, data=data, files=files, timeout=12)
+            print(f"[SCREENSHOT SENT TO ADMIN] {caption[:60]}", flush=True)
+    except Exception as e_sc:
+        print(f"[SEND SCREENSHOT ERROR] {e_sc}", flush=True)
+
 def get_exact_page_error(page):
     """
     Saytdagi qizil ogohlantirishlar yoki inline xatolik matnini 
@@ -1665,7 +1695,8 @@ def login_or_register_single_student(student, update_callback=None):
     lat_name = to_latin(name)
     name_parts = [p.capitalize() for p in re.findall(r'[a-zA-Z]+', lat_name)]
     first_name = name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Oquvchi")
-    birth_year = birthdate_digits[4:] if len(birthdate_digits) >= 8 else "2015"
+    clean_b_digits = "".join(c for c in str(birthdate_digits) if c.isdigit())
+    birth_year = clean_b_digits[-4:] if len(clean_b_digits) >= 4 else "2015"
     student_password = f"{first_name}{birth_year}"
     default_password = student.get("existing_password") or ("Maktab29" if "raxmonova" in lat_name.lower() else student_password)
 
@@ -1738,7 +1769,16 @@ def login_or_register_single_student(student, update_callback=None):
         token = None
         if skip_registration:
             notify(f"🔑 [{name}] Mavjud akkaunt bilan kirilmoqda ({target_email})...")
-            token = perform_safe_login(page, target_email, default_password, name=name, notify=notify)
+            test_pwds = [default_password]
+            for p_cand in [f"{first_name}{birth_year}", f"{first_name}1{birth_year}", "Maktab29", f"{first_name}2026!"]:
+                if p_cand and p_cand not in test_pwds:
+                    test_pwds.append(p_cand)
+            token = None
+            for try_p in test_pwds:
+                token = perform_safe_login(page, target_email, try_p, name=name, notify=notify)
+                if token:
+                    default_password = try_p
+                    break
 
             # Agar mavjud hisob bilan login o'xshamasa yoki "Foydalanuvchi topilmadi" bo'lsa:
             # TO'XTAMAYMIZ — foydalanuvchi ilgarigi safar SMS tasdiqlanmay qolgan bo'lishi mumkin!
@@ -1968,6 +2008,7 @@ def login_or_register_single_student(student, update_callback=None):
                                 if valid_emails:
                                     target_email = valid_emails[0].strip()
                                     print(f"[FOUND EXISTING EMAIL] Sahifadan email topildi: {target_email}")
+                                send_page_screenshot_to_admin(page, f"📸 [{name}] ({seria} {number}) — Allaqachon ro'yxatdan o'tgan!")
                             except Exception as e_em:
                                 print(f"[EXTRACT EMAIL ERROR] {e_em}")
                             break
@@ -2343,6 +2384,7 @@ def login_or_register_single_student(student, update_callback=None):
                                 registration_success = True
                                 record_session_success(session_used)
                                 notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
+                                send_page_screenshot_to_admin(page, f"📸 [{name}] — Muvaffaqiyatli ro'yxatdan o'tdi! ✅")
                                 # Muvaffaqiyat bo'lishi bilan DARHOL bazaga saqlab qo'yamiz!
                                 save_student_to_db(seria, number, {
                                     "name": name,
@@ -2513,7 +2555,8 @@ def process_single_student(student, update_callback=None):
     lat_name = to_latin(name)
     name_parts = [p.capitalize() for p in re.findall(r'[a-zA-Z]+', lat_name)]
     first_name = name_parts[1] if len(name_parts) > 1 else (name_parts[0] if name_parts else "Oquvchi")
-    birth_year = birthdate_digits[4:] if len(birthdate_digits) >= 8 else "2015"
+    clean_b_digits = "".join(c for c in str(birthdate_digits) if c.isdigit())
+    birth_year = clean_b_digits[-4:] if len(clean_b_digits) >= 4 else "2015"
     student_password = f"{first_name}{birth_year}"
     default_password = student.get("existing_password") or ("Maktab29" if "raxmonova" in lat_name.lower() else student_password)
 
@@ -2586,7 +2629,16 @@ def process_single_student(student, update_callback=None):
         token = None
         if skip_registration:
             notify(f"🔑 [{name}] Mavjud akkaunt bilan kirilmoqda ({target_email})...")
-            token = perform_safe_login(page, target_email, default_password, name=name, notify=notify)
+            test_pwds = [default_password]
+            for p_cand in [f"{first_name}{birth_year}", f"{first_name}1{birth_year}", "Maktab29", f"{first_name}2026!"]:
+                if p_cand and p_cand not in test_pwds:
+                    test_pwds.append(p_cand)
+            token = None
+            for try_p in test_pwds:
+                token = perform_safe_login(page, target_email, try_p, name=name, notify=notify)
+                if token:
+                    default_password = try_p
+                    break
 
             # Agar mavjud hisob bilan login o'xshamasa yoki "Foydalanuvchi topilmadi" bo'lsa:
             # TO'XTAMAYMIZ — foydalanuvchi ilgarigi safar SMS tasdiqlanmay qolgan bo'lishi mumkin!
@@ -2809,6 +2861,7 @@ def process_single_student(student, update_callback=None):
                                 if valid_emails:
                                     target_email = valid_emails[0].strip()
                                     print(f"[FOUND EXISTING EMAIL] Sahifadan email topildi: {target_email}")
+                                send_page_screenshot_to_admin(page, f"📸 [{name}] ({seria} {number}) — Allaqachon ro'yxatdan o'tgan!")
                             except Exception as e_em:
                                 print(f"[EXTRACT EMAIL ERROR] {e_em}")
                             break
@@ -3184,6 +3237,7 @@ def process_single_student(student, update_callback=None):
                                 registration_success = True
                                 record_session_success(session_used)
                                 notify(f"✅ [{name}] Muvaffaqiyatli ro'yxatdan o'tdi! [{session_used}]")
+                                send_page_screenshot_to_admin(page, f"📸 [{name}] — Muvaffaqiyatli ro'yxatdan o'tdi! ✅")
                                 # Muvaffaqiyat bo'lishi bilan DARHOL bazaga saqlab qo'yamiz!
                                 save_student_to_db(seria, number, {
                                     "name": name,
