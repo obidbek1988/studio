@@ -2040,6 +2040,7 @@ def login_or_register_single_student(student, update_callback=None):
                             break
 
                     # Davlat bazasidan javob kelishini 45 soniya shoshmasdan kutamiz (sayt sekin ishlaganda ham uzilmaydi):
+                    date_swapped = False
                     for _ in range(45):
                         time.sleep(1)
                         content = page.content()
@@ -2048,8 +2049,16 @@ def login_or_register_single_student(student, update_callback=None):
                             is_new_student = True
                             break
                         elif "no content" in content.lower() or "topilmadi" in content.lower():
-                            has_error = True
-                            break
+                            if form_attempt < len(date_variants):
+                                next_v = date_variants[form_attempt]
+                                print(f"[DATE SWAP RETRY] {cur_bdate} da topilmadi. Kun va oy almashtirib sinab ko'rilmoqda: {next_v}...", flush=True)
+                                notify(f"🔄 [{name}] Sana {cur_bdate} da topilmadi. Kun va oyni almashtirib sinab ko'rilmoqda ({next_v})...")
+                                form_attempt += 1
+                                date_swapped = True
+                                break
+                            else:
+                                has_error = True
+                                break
                         elif "allaqachon" in content.lower():
                             is_already_registered = True
                             try:
@@ -2062,6 +2071,10 @@ def login_or_register_single_student(student, update_callback=None):
                             except Exception as e_em:
                                 print(f"[EXTRACT EMAIL ERROR] {e_em}")
                             break
+
+                    if date_swapped:
+                        time.sleep(2)
+                        continue
 
                     if is_new_student or is_already_registered or has_error:
                         break
@@ -2917,6 +2930,7 @@ def process_single_student(student, update_callback=None):
                             break
 
                     # Davlat bazasidan javob kelishini 45 soniya shoshmasdan kutamiz (sayt sekin ishlaganda ham uzilmaydi):
+                    date_swapped = False
                     for _ in range(45):
                         time.sleep(1)
                         content = page.content()
@@ -2925,8 +2939,16 @@ def process_single_student(student, update_callback=None):
                             is_new_student = True
                             break
                         elif "no content" in content.lower() or "topilmadi" in content.lower():
-                            has_error = True
-                            break
+                            if form_attempt < len(date_variants):
+                                next_v = date_variants[form_attempt]
+                                print(f"[DATE SWAP RETRY] {cur_bdate} da topilmadi. Kun va oy almashtirib sinab ko'rilmoqda: {next_v}...", flush=True)
+                                notify(f"🔄 [{name}] Sana {cur_bdate} da topilmadi. Kun va oyni almashtirib sinab ko'rilmoqda ({next_v})...")
+                                form_attempt += 1
+                                date_swapped = True
+                                break
+                            else:
+                                has_error = True
+                                break
                         elif "allaqachon" in content.lower():
                             is_already_registered = True
                             try:
@@ -2939,6 +2961,10 @@ def process_single_student(student, update_callback=None):
                             except Exception as e_em:
                                 print(f"[EXTRACT EMAIL ERROR] {e_em}")
                             break
+
+                    if date_swapped:
+                        time.sleep(2)
+                        continue
 
                     if is_new_student or is_already_registered or has_error:
                         break
