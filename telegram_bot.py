@@ -38,6 +38,7 @@ if sys.platform == "win32":
 # Global jurnallash (Console jonli log uchun)
 LOG_BUFFER = deque(maxlen=60)
 ACTIVE_WORKER_SESSIONS = set()
+ACTIVE_CLOUD_DISPATCHES = {}
 
 class LogInterceptor:
     def __init__(self, original_stream):
@@ -703,13 +704,18 @@ class TelegramBotServer:
             except Exception:
                 pass
 
+            clean_base = os.path.splitext(orig_fname)[0].strip()
+            short_tag = clean_base.replace("_faqat_tanlanganlar", "").replace("_tayyor_shablon", "").replace("shablon_", "")
+            file_tag = f"📁 [{short_tag}]"
+
             def telegram_progress_callback(msg_text):
                 try:
                     if self.is_paused:
                         print("[PAUSED] Jarayon to'xtatilgan, kutilmoqda...")
                         while self.is_paused:
                             time.sleep(2)
-                    self.send_message(chat_id, msg_text)
+                    tagged_msg = msg_text if msg_text.startswith("📁") else f"{file_tag} {msg_text}"
+                    self.send_message(chat_id, tagged_msg)
                     if "✅" in msg_text:
                         order_progress_state["success"] += 1
                         order_progress_state["done"] += 1
@@ -964,7 +970,15 @@ class TelegramBotServer:
             }
             res = requests.post(dispatch_url, headers=headers, json=payload, timeout=15)
             if res.status_code in (204, 200, 201):
-                print(f"[ON-DEMAND SUCCESS] Yangi Virtual Kompyuter yoqildi! Sessiya: {chosen_session}")
+                clean_orig = re.sub(r"^order_\d+_\d+_", "", orig_fname)
+                ACTIVE_CLOUD_DISPATCHES[order_id] = {
+                    "file": clean_orig,
+                    "user": user_name,
+                    "chat_id": chat_id,
+                    "session": chosen_session,
+                    "time": datetime.datetime.now().strftime("%H:%M:%S")
+                }
+                print(f"[ON-DEMAND SUCCESS] Yangi Virtual Kompyuter yoqildi! Sessiya: {chosen_session} ({clean_orig})")
                 return True, chosen_session
             else:
                 print(f"[ON-DEMAND DISPATCH FAILED] Status: {res.status_code}, Res: {res.text}")
@@ -2024,10 +2038,16 @@ class TelegramBotServer:
             filled = int(pct / 10)
             bar = "█" * filled + "░" * (10 - filled)
 
+            extra_cloud_txt = ""
+            if ACTIVE_CLOUD_DISPATCHES:
+                extra_cloud_txt = "\n\n🚀 <b>PARALLEL ISHLAYOTGAN VIRTUAL KOMPYUTERLAR:</b>\n"
+                for _oid, oinfo in ACTIVE_CLOUD_DISPATCHES.items():
+                    extra_cloud_txt += f"📁 <b>{oinfo['file']}</b>\n  • Sessiya: <code>{oinfo['session']}</code> | Vaqt: <b>{oinfo['time']}</b> | Holat: <b>Jarayonda ⚙️</b>\n"
+
             msg = (
                 "📊 <b>BUYURTMA TAHLILI VA JONLI JARAYON:</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📁 Hozirgi fayl: <b>{order_name}</b>\n"
+                f"📁 Hozirgi asosiy fayl: <b>{order_name}</b>\n"
                 f"📌 Holat: <b>{order_progress_state['status']}</b>\n"
                 f"📈 Jarayon: <code>[{bar}] {pct}%</code>\n\n"
                 f"👥 Jami o'quvchilar: <b>{total} ta</b>\n"
@@ -2035,6 +2055,7 @@ class TelegramBotServer:
                 f"⚠️ Olinmagan/Qayta urinish: <b>{fail} ta</b>\n"
                 f"⏳ Qolgan: <b>{max(0, total - done)} ta</b>\n"
                 f"⚡ Orqa fonda faol oqimlar: <b>{act_workers}/10 nafar</b>"
+                f"{extra_cloud_txt}"
             )
             self.send_message(chat_id, msg, reply_markup=self.get_reply_keyboard(chat_id))
             return

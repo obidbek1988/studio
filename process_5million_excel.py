@@ -3575,9 +3575,15 @@ def process_excel_order(excel_path, update_callback=None, service_mode="full_cer
             valid_rows.append(r)
     total_students = len(valid_rows)
 
+    raw_fname = os.path.basename(excel_path)
+    clean_title = re.sub(r"^order_\d+_\d+_", "", raw_fname)
+    clean_title = re.sub(r"\.xlsx$", "", clean_title, flags=re.I)
+    short_title = clean_title.replace("_faqat_tanlanganlar", "").replace("_tayyor_shablon", "").replace("shablon_", "")
+    file_tag = f"📁 [{short_title}]"
+
     parallel_msg = f"⚡ <b>{PARALLEL_WORKERS} ta parallel oqimda</b> darslar va sertifikatlar olinadi..." if PARALLEL_WORKERS > 1 else "Ketma-ket rejimda ishlamoqda..."
     if update_callback:
-        update_callback(f"📊 Buyurtma qabul qilindi: Jami <b>{total_students} ta</b> o'quvchi mavjud.\n{parallel_msg}")
+        update_callback(f"{file_tag} 📊 Buyurtma qabul qilindi: Jami <b>{total_students} ta</b> o'quvchi mavjud.\n{parallel_msg}")
 
     success_count = 0
     active_workers = []
@@ -3655,7 +3661,7 @@ def process_excel_order(excel_path, update_callback=None, service_mode="full_cer
                     update_callback("🛑 Buyurtma to'liq to'xtatildi (Otmen).")
                 break
 
-            idx_str = f"[{idx}/{total_students}]"
+            idx_str = f"{file_tag} [{idx}/{total_students}]"
             name_val = sheet.cell(r, name_col).value
             if not name_val:
                 continue
@@ -3826,7 +3832,7 @@ def process_excel_order(excel_path, update_callback=None, service_mode="full_cer
             active_workers.append(fut)
             CURRENT_ACTIVE_TOKEN_WORKERS = len([f for f in active_workers if not f.done()])
             if update_callback:
-                update_callback(f"⚡ <b>{student['name']}</b>: Token olindi! Darslarni yopishga topshirildi (Orqa fonda: <b>{CURRENT_ACTIVE_TOKEN_WORKERS}/{PARALLEL_WORKERS}</b> faol)...")
+                update_callback(f"{file_tag} ⚡ <b>{student['name']}</b>: Token olindi! Darslarni yopishga topshirildi (Orqa fonda: <b>{CURRENT_ACTIVE_TOKEN_WORKERS}/{PARALLEL_WORKERS}</b> faol)...")
 
             if PARALLEL_WORKERS <= 1:
                 fut.result()

@@ -150,13 +150,18 @@ def main():
     # 3. Dvigatelni ishga tushirish
     import process_5million_excel
 
+    clean_base = os.path.splitext(display_fname)[0].strip()
+    short_tag = clean_base.replace("_faqat_tanlanganlar", "").replace("_tayyor_shablon", "").replace("shablon_", "")
+    file_tag = f"📁 [{short_tag}]"
+
     def tg_callback(msg):
         m_str = str(msg).strip()
-        print(f"[WORKER LOG] {m_str}", flush=True)
+        tagged_msg = m_str if m_str.startswith("📁") else f"{file_tag} {m_str}"
+        print(f"[WORKER LOG] {tagged_msg}", flush=True)
         # Har bir xabarni jonli ravishda mijozga ham, adminga ham yuboramiz!
-        send_telegram_msg(bot_token, chat_id, m_str)
+        send_telegram_msg(bot_token, chat_id, tagged_msg)
         if admin_id and admin_id != chat_id:
-            send_telegram_msg(bot_token, admin_id, f"👤 [{user_name}]:\n{m_str}")
+            send_telegram_msg(bot_token, admin_id, f"👤 [{user_name}]:\n{tagged_msg}")
 
     start_ts = time.time()
     try:
