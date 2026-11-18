@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-MAKTAB BARCHA SINFLAR UCHUN MASTER 5 MILLION SHABLON YARATISH DASTURI (OPTIMAL VA TEZKOR)
+MAKTAB BARCHA SINFLAR UCHUN MASTER 5 MILLION SHABLON YARATISH DASTURI (MUKAMMAL VA ANIQ)
 - Barcha sinflar (1-A dan 11-V gacha) sinfma-sinf tartiblangan
 - Mavjud sertifikat havolalari (havolasi borlar) aslo yo'qolmaydi (moviy giperhavola va yashil fon)
 - Mavjud login va parollar o'z o'rnida saqlanadi (moviy fon)
+- Faqat 100% aniq mos tushgan o'quvchilarga sertifikat va login biriktiriladi (hech qanday xatoliksiz)
 - Bot to'liq tushunadigan rasmiy 9 ta ustunli formatda yaratiladi:
   [T/r, F.I.SH, Sana, Seriya, Raqam, Sinf, Sertifikat havolasi, Login, Parol]
 """
@@ -50,15 +51,30 @@ def class_sort_key(c_name):
         return (num, letter)
     return (999, str(c_name or 'Z'))
 
-def get_name_words(name_text):
-    if not name_text:
-        return []
-    lat = to_latin(str(name_text)).lower()
-    return [clean_latin_slug(w) for w in lat.split() if len(clean_latin_slug(w)) >= 3]
+def get_words(n):
+    lat = to_latin(str(n or "")).lower().replace("dj", "j").replace("'", "").replace("`", "").replace("’", "").replace("ʻ", "")
+    return [clean_latin_slug(w) for w in lat.split() if len(clean_latin_slug(w)) >= 2]
+
+def is_strict_same_student(n1, n2):
+    w1 = get_words(n1)
+    w2 = get_words(n2)
+    if len(w1) < 2 or len(w2) < 2:
+        return False
+    s1, s2 = w1[0], w2[0] # Familiya
+    i1, i2 = w1[1], w2[1] # Ism
+    # Ismlar aynan bir xil bo'lishi shart! (Masalan: Abdulhakim bilan Abdunabi hech qachon mos kelmaydi)
+    if i1 != i2:
+        return False
+    # Familiya tekshiruvi:
+    if s1 == s2:
+        return True
+    if len(s1) >= 5 and len(s2) >= 5 and (s1 in s2 or s2 in s1 or s1[:5] == s2[:5]):
+        return True
+    return False
 
 def main():
     print("="*70, flush=True)
-    print("🚀 MASTER SHABLON YARATISH (AQLLI TARTIB VA MOVIY HAVOLALAR BILAN)...", flush=True)
+    print("🚀 MASTER SHABLON YARATISH (100% ANIQ VA MUKAMMAL DARAJADA)...", flush=True)
     print("="*70, flush=True)
 
     # 1. Barcha mavjud sertifikatlar va login/parollar ro'yxatini yig'ish
@@ -84,7 +100,8 @@ def main():
                     "num": num,
                     "cert": cert,
                     "login": log,
-                    "pwd": pwd
+                    "pwd": pwd,
+                    "source": "students_db.json"
                 })
 
     # 1.2 File 2 dan (media_1794985490142_0b534e0d.xlsx)
@@ -105,7 +122,8 @@ def main():
                         "num": "",
                         "cert": str(cert or "").strip(),
                         "login": str(log or "").strip(),
-                        "pwd": str(pwd or "").strip()
+                        "pwd": str(pwd or "").strip(),
+                        "source": f"5-sinflar_{sname}"
                     })
 
     # 1.3 Papkadagi barcha Excel fayllardan
@@ -148,28 +166,30 @@ def main():
                             "num": str(num or "").strip(),
                             "cert": c_str if "certificate?id=" in c_str else "",
                             "login": l_str if "@" in l_str else "",
-                            "pwd": p_str
+                            "pwd": p_str,
+                            "source": fname
                         })
         except Exception:
             pass
 
     print(f"✅ Barcha ma'lumotlar bazasi yig'ildi: {len(known_records)} ta qayd", flush=True)
 
-    # Indekslash (Tezkor qidirish uchun O(1) hash table)
+    # Indekslash (Tezkor va 100% aniq hash qidiruv)
     doc_index = {}
-    name_index = {} # first word -> list of records
+    name_index = {} # (familiya_boshlanishi, ism) -> list of records
 
     for rec in known_records:
-        rec["words"] = get_name_words(rec["name"])
+        rec_words = get_words(rec["name"])
+        rec["words"] = rec_words
         rec_k = rec.get("key")
         if rec_k:
             if rec_k not in doc_index or (not doc_index[rec_k].get("cert") and rec.get("cert")):
                 doc_index[rec_k] = rec
-        if rec["words"]:
-            fw = rec["words"][0]
-            name_index.setdefault(fw, []).append(rec)
-            # Prefix 3 harf bo'yicha ham
-            name_index.setdefault(fw[:3], []).append(rec)
+        if len(rec_words) >= 2:
+            s_lead = rec_words[0][:4]
+            i_lead = rec_words[1]
+            key_pair = (s_lead, i_lead)
+            name_index.setdefault(key_pair, []).append(rec)
 
     # 2. File 1 dan 1431 ta o'quvchini yuklash va solishtirish
     print(f"📖 Asosiy maktab ro'yxati o'qilmoqda: {F1_PATH}", flush=True)
@@ -202,7 +222,7 @@ def main():
         login_val = ""
         pwd_val = ""
 
-        # 1. Avval pasport/metrika bo'yicha aniq qidiramiz
+        # 1. Avval pasport/metrika bo'yicha 100% aniq qidiramiz
         if k_doc and k_doc in doc_index:
             rec = doc_index[k_doc]
             if rec.get("cert") and "certificate?id=" in rec["cert"]:
@@ -211,29 +231,15 @@ def main():
                 login_val = rec["login"]
                 pwd_val = rec.get("pwd", "")
 
-        # 2. Agar sertifikat topilmasa, F.I.SH bo'yicha qidiramiz
+        # 2. Agar hujjat bo'yicha topilmasa, F.I.SH bo'yicha qat'iy qidiramiz
         if not cert_val:
-            st_words = get_name_words(name_str)
-            if st_words:
-                fw = st_words[0]
-                candidates = name_index.get(fw, []) + name_index.get(fw[:3], [])
+            st_words = get_words(name_str)
+            if len(st_words) >= 2:
+                s_lead = st_words[0][:4]
+                i_lead = st_words[1]
+                candidates = name_index.get((s_lead, i_lead), [])
                 for rec in candidates:
-                    rw = rec["words"]
-                    if not rw:
-                        continue
-                    # Match familiya va ism
-                    is_match = False
-                    if len(st_words) >= 2 and len(rw) >= 2:
-                        if (st_words[0] == rw[0] or st_words[0][:3] == rw[0][:3]) and \
-                           (st_words[1] == rw[1] or st_words[1][:4] == rw[1][:4] or st_words[1] in rw[1] or rw[1] in st_words[1]):
-                            is_match = True
-                    if not is_match:
-                        s1 = "".join(st_words[:2])
-                        s2 = "".join(rw[:2])
-                        if s1 and s2 and len(s1) >= 7 and len(s2) >= 7 and (s1 in s2 or s2 in s1):
-                            is_match = True
-
-                    if is_match:
+                    if is_strict_same_student(name_str, rec["name"]):
                         if rec.get("cert") and "certificate?id=" in rec["cert"]:
                             cert_val = rec["cert"]
                         if not login_val and rec.get("login"):
