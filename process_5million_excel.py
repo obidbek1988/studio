@@ -106,6 +106,23 @@ def send_page_screenshot_to_admin(page, caption=""):
     except Exception:
         pass
 
+def format_clean_error_message(err_text):
+    """
+    Saytdagi xatolikni tushunarli va aniq qilib bayon qilish
+    """
+    if not err_text:
+        return "Sayt javob bermadi"
+    low = err_text.lower()
+    if any(w in low for w in ["limit", "5 ta", "cheklangan", "ko'p urinish"]):
+        return f"📱 Raqam limiti to'lgan (Bitta raqamga 5 tagacha ruxsat): «{err_text}»"
+    if any(w in low for w in ["topilmadi", "not found", "no content"]):
+        return f"❌ Davlat bazasida topilmadi (Seriya/raqam/sana xato): «{err_text}»"
+    if any(w in low for w in ["allaqachon", "already"]):
+        return f"👤 O'quvchi allaqachon ro'yxatdan o'tgan: «{err_text}»"
+    if any(w in low for w in ["kod noto'g'ri", "notogri kod", "invalid code"]):
+        return f"⚠️ Tasdiqlash kodi noto'g'ri: «{err_text}»"
+    return f"⚠️ Sayt xabari: «{err_text}»"
+
 def get_exact_page_error(page):
     """
     Saytdagi qizil ogohlantirishlar yoki inline xatolik matnini 
@@ -2423,7 +2440,7 @@ def login_or_register_single_student(student, update_callback=None):
                             detected_page_error = get_exact_page_error(page)
                             if detected_page_error:
                                 print(f"[EXACT RED ERROR ON PAGE] «{detected_page_error}»", flush=True)
-                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{detected_page_error}»")
+                                notify(f"[{name}] {format_clean_error_message(detected_page_error)}")
                                 err_low = detected_page_error.lower()
                                 if any(w in err_low for w in ["cheklangan", "bitta telefon", "bitta raqam", "faqat 5", "limit", "foydalanuvchi"]):
                                     is_limited = True
@@ -2498,7 +2515,7 @@ def login_or_register_single_student(student, update_callback=None):
                             # 15 soniyada javob kelmagan bo'lsa ekrandan xatolikni tekshirish
                             late_err = get_exact_page_error(page)
                             if late_err:
-                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{late_err}»")
+                                notify(f"[{name}] {format_clean_error_message(late_err)}")
                                 new_sess = mark_session_exhausted(session_used, reason=late_err)
                                 notify(f"🔄 Yangi toza Telegram sessiyaga o'tildi: {new_sess}")
                             else:
@@ -3258,7 +3275,7 @@ def process_single_student(student, update_callback=None):
                             detected_page_error = get_exact_page_error(page)
                             if detected_page_error:
                                 print(f"[EXACT RED ERROR ON PAGE] «{detected_page_error}»", flush=True)
-                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{detected_page_error}»")
+                                notify(f"[{name}] {format_clean_error_message(detected_page_error)}")
                                 err_low = detected_page_error.lower()
                                 if any(w in err_low for w in ["cheklangan", "bitta telefon", "bitta raqam", "faqat 5", "limit", "foydalanuvchi"]):
                                     is_limited = True
@@ -3333,7 +3350,7 @@ def process_single_student(student, update_callback=None):
                             # 15 soniyada javob kelmagan bo'lsa ekrandan xatolikni tekshirish
                             late_err = get_exact_page_error(page)
                             if late_err:
-                                notify(f"⚠️ [{name}] Saytdagi qizil xatolik: «{late_err}»")
+                                notify(f"[{name}] {format_clean_error_message(late_err)}")
                                 new_sess = mark_session_exhausted(session_used, reason=late_err)
                                 notify(f"🔄 Yangi toza Telegram sessiyaga o'tildi: {new_sess}")
                             else:
