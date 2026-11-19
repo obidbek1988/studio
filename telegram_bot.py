@@ -905,7 +905,7 @@ class TelegramBotServer:
                 )
                 feedback_markup = {
                     "inline_keyboard": [
-                        [{"text": "✍️ Fikr / Sharh qoldirish", "callback_data": f"write_review_{int(time.time())}"}]
+                        [{"text": "⭐️ Fikringiz biz uchun juda qadrli!", "callback_data": f"write_review_{int(time.time())}"}]
                     ]
                 }
                 self.send_message(chat_id, feedback_invite, reply_markup=feedback_markup)
@@ -2125,7 +2125,7 @@ class TelegramBotServer:
             markup = {
                 "inline_keyboard": [
                     [{"text": f"📢 Fikrlar va Natijalar Kanali ({ch_name})", "url": ch_url}],
-                    [{"text": "✍️ O'z fikringizni qoldirish", "callback_data": "write_review_direct"}]
+                    [{"text": "⭐️ Fikringiz biz uchun juda qadrli!", "callback_data": "write_review_direct"}]
                 ]
             }
             self.send_message(chat_id, txt, reply_markup=markup)

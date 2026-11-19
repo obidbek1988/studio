@@ -209,7 +209,7 @@ def main():
         )
         feedback_markup = {
             "inline_keyboard": [
-                [{"text": "✍️ Fikr / Sharh qoldirish", "callback_data": f"write_review_{order_id}"}]
+                [{"text": "⭐️ Fikringiz biz uchun juda qadrli!", "callback_data": f"write_review_{order_id}"}]
             ]
         }
         send_telegram_msg(bot_token, chat_id, feedback_invite, reply_markup=feedback_markup)
