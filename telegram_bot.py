@@ -407,6 +407,9 @@ class TelegramBotServer:
             return self.api_call("editMessageCaption", data_cap)
         return res
 
+    def delete_message(self, chat_id, message_id):
+        return self.api_call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
+
     def answer_callback_query(self, callback_query_id, text=None, show_alert=False):
         data = {"callback_query_id": callback_query_id}
         if text:
@@ -1279,7 +1282,15 @@ class TelegramBotServer:
                     if self.admin_id:
                         try:
                             mention_html, contact_line, client_btn = self.format_user_mention(chat_id, u_name)
-                            reply_m = {"inline_keyboard": [[client_btn]]} if client_btn else None
+                            adm_btns = [
+                                [
+                                    {"text": "✅ Qabul qilish (Boshlash)", "callback_data": f"approve_order_{chat_id}"},
+                                    {"text": "❌ Rad etish", "callback_data": f"reject_order_{chat_id}"}
+                                ]
+                            ]
+                            if client_btn:
+                                adm_btns.append([client_btn])
+                            reply_m = {"inline_keyboard": adm_btns}
                             self.send_message(
                                 self.admin_id,
                                 f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n\n"
@@ -1287,7 +1298,8 @@ class TelegramBotServer:
                                 f"{contact_line}\n"
                                 f"📁 Fayl: <code>{orig_fname}</code> ({student_cnt} ta bola)\n"
                                 f"💰 Summa: <b>{total_price:,} so'm</b>\n"
-                                f"ℹ️ To'lov cheki kutilmoqda.",
+                                f"ℹ️ To'lov cheki kutilmoqda.\n\n"
+                                f"<i>(Chekni kutmasdan qabul qilishingiz, rad etishingiz yoki mijoz lichkasiga yozishingiz mumkin 👇)</i>",
                                 reply_markup=reply_m
                             )
                         except Exception: pass
@@ -1471,6 +1483,24 @@ class TelegramBotServer:
                 self.edit_message(chat_id, msg_id, "❌ <b>Sharh rad etildi va kanalga chiqarilmadi.</b>", reply_markup={"inline_keyboard": []})
                 return
 
+            if data.startswith("del_rev_"):
+                parts = data.split("_")
+                rev_id = parts[2] if len(parts) > 2 else ""
+                ch_msg_id = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None
+                self.answer_callback_query(cb_id, "🗑 Kanaldan o'chirilmoqda...")
+                ch_target = self.config.get("reviews_channel") or "@beshmillion_fikrlar"
+                if ch_msg_id:
+                    try:
+                        self.delete_message(ch_target, ch_msg_id)
+                    except Exception as e_del:
+                        print(f"[DELETE CHANNEL POST ERROR] {e_del}")
+                reviews = load_reviews_db()
+                if rev_id in reviews:
+                    reviews[rev_id]["status"] = "DELETED"
+                    save_reviews_db(reviews)
+                self.edit_message(chat_id, msg_id, "🗑 <b>Ushbu sharh kanaldan muvaffaqiyatli o'chirildi!</b>", reply_markup={"inline_keyboard": []})
+                return
+
             self.answer_callback_query(cb_id)
             return
 
@@ -1610,7 +1640,15 @@ class TelegramBotServer:
                             from_u = msg.get("from", {})
                             u_name_full = f"{from_u.get('first_name', '')} {from_u.get('last_name', '')}".strip() or user_name
                             mention_html, contact_line, client_btn = self.format_user_mention(chat_id, u_name_full, from_u.get("username"))
-                            reply_m = {"inline_keyboard": [[client_btn]]} if client_btn else None
+                            adm_btns = [
+                                [
+                                    {"text": "✅ Qabul qilish (Boshlash)", "callback_data": f"approve_order_{chat_id}"},
+                                    {"text": "❌ Rad etish", "callback_data": f"reject_order_{chat_id}"}
+                                ]
+                            ]
+                            if client_btn:
+                                adm_btns.append([client_btn])
+                            reply_m = {"inline_keyboard": adm_btns}
                             self.send_document(
                                 self.admin_id,
                                 saved_path,
@@ -1621,7 +1659,7 @@ class TelegramBotServer:
                                     f"📁 Fayl: <code>{orig_fname}</code>\n"
                                     f"👥 O'quvchilar soni: <b>{student_cnt} ta</b>\n"
                                     f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
-                                    f"💡 <i>Agar Excelda xatolik bo'lsa, yuqoridagi Telegram havolasi orqali mijozga darhol yozishingiz mumkin.</i>"
+                                    f"<i>(Quyidagi tugmalar orqali to'lovni kutmasdan qabul qilishingiz, rad etishingiz yoki mijoz lichkasiga yozishingiz mumkin 👇)</i>"
                                 ),
                                 reply_markup=reply_m,
                                 custom_filename=orig_fname
@@ -1736,7 +1774,15 @@ class TelegramBotServer:
                             from_u = msg.get("from", {})
                             u_name_full = f"{from_u.get('first_name', '')} {from_u.get('last_name', '')}".strip() or user_name
                             mention_html, contact_line, client_btn = self.format_user_mention(chat_id, u_name_full, from_u.get("username"))
-                            reply_m = {"inline_keyboard": [[client_btn]]} if client_btn else None
+                            adm_btns = [
+                                [
+                                    {"text": "✅ Qabul qilish (Boshlash)", "callback_data": f"approve_order_{chat_id}"},
+                                    {"text": "❌ Rad etish", "callback_data": f"reject_order_{chat_id}"}
+                                ]
+                            ]
+                            if client_btn:
+                                adm_btns.append([client_btn])
+                            reply_m = {"inline_keyboard": adm_btns}
                             self.send_message(
                                 self.admin_id,
                                 f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n\n"
@@ -1745,7 +1791,8 @@ class TelegramBotServer:
                                 f"📁 Fayl: <code>{orig_fname}</code>\n"
                                 f"👥 O'quvchilar: <b>{student_cnt} ta</b>\n"
                                 f"💰 Kutilayotgan summa: <b>{total_price:,} so'm</b>\n"
-                                f"ℹ️ Mijozdan to'lov cheki kutilmoqda.",
+                                f"ℹ️ Mijozdan to'lov cheki kutilmoqda.\n\n"
+                                f"<i>(Chekni kutmasdan qabul qilishingiz, rad etishingiz yoki mijoz lichkasiga yozishingiz mumkin 👇)</i>",
                                 reply_markup=reply_m
                             )
                         except Exception:
@@ -1854,47 +1901,86 @@ class TelegramBotServer:
             return
 
         # ---------------------------------------------------------------------
-        # MIJOZ SHARH YOZISH HOLATI
+        # MIJOZ SHARH YOZISH HOLATI (Avtomatik kanalga chiqariladi)
         # ---------------------------------------------------------------------
         st_client = client_input_state.get(chat_id)
         if st_client and st_client.get("action") == "write_review":
             client_input_state.pop(chat_id, None)
             rev_id = f"rev_{int(time.time())}_{chat_id}"
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ch_target = self.config.get("reviews_channel") or "@beshmillion_fikrlar"
+
+            # Kanalga chiqariladigan post matni
+            post_text = (
+                f"⭐️⭐️⭐️⭐️⭐️ <b>MIJOZIMIZNING MINNATDORCHILIGI!</b>\n\n"
+                f"👤 <b>Mijoz:</b> {user_name}\n"
+                f"💬 <b>Fikr:</b>\n"
+                f"«<i>{text}</i>»\n\n"
+                f"🕒 <b>Sana:</b> <code>{now_str}</code>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🤖 <b>Rasmiy Bot:</b> @Beshmillionagentbot\n"
+                f"📢 <b>Kanal:</b> {ch_target}"
+            )
+
+            # Darhol kanalga chiqarish
+            res_post = self.send_message(ch_target, post_text)
+            ch_msg_id = ""
+            is_published = False
+            if res_post.get("ok"):
+                is_published = True
+                ch_msg_id = res_post.get("result", {}).get("message_id", "")
+
             reviews = load_reviews_db()
             reviews[rev_id] = {
                 "review_id": rev_id,
                 "chat_id": chat_id,
                 "user_name": user_name,
                 "text": text,
-                "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "status": "PENDING"
+                "date": now_str,
+                "status": "PUBLISHED" if is_published else "PENDING",
+                "channel_msg_id": ch_msg_id
             }
             save_reviews_db(reviews)
+
             self.send_message(
                 chat_id,
-                "❤️ <b>Samimiy fikringiz uchun katta rahmat!</b>\n\n"
-                "Fikringiz moderator (Admin) tasdig'idan so'ng rasmiy kanalimizga joylanadi.",
+                f"❤️ <b>Samimiy fikringiz uchun katta rahmat!</b>\n\n"
+                f"Fikringiz rasmiy kanalimizga muvaffaqiyatli joylandi: <b>{ch_target}</b>",
                 reply_markup=self.get_reply_keyboard(chat_id)
             )
 
             if self.admin_id:
                 try:
                     mention_html, contact_line, client_btn = self.format_user_mention(chat_id, user_name, msg.get("from", {}).get("username"))
-                    admin_caption = (
-                        f"🌟 <b>YANGI MIJOZ SHARHI (Fikr keldi):</b>\n\n"
-                        f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
-                        f"{contact_line}\n"
-                        f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
-                        f"💬 <b>Fikr matni:</b>\n"
-                        f"«<i>{text}</i>»\n\n"
-                        f"Ushbu sharhni kanalga chiqaramizmi? 👇"
-                    )
-                    adm_btns = [
-                        [
-                            {"text": "📢 Kanalga chiqarish", "callback_data": f"pub_rev_{rev_id}"},
-                            {"text": "❌ Rad etish", "callback_data": f"rej_rev_{rev_id}"}
+                    if is_published:
+                        admin_caption = (
+                            f"🌟 <b>YANGI MIJOZ SHARHI KANALGA CHIQARILDI!</b>\n\n"
+                            f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                            f"{contact_line}\n"
+                            f"🕒 Vaqt: <code>{now_str}</code>\n\n"
+                            f"💬 <b>Fikr matni:</b>\n"
+                            f"«<i>{text}</i>»\n\n"
+                            f"📢 <i>Sharh avtomatik tarzda {ch_target} kanaliga joylandi.</i>"
+                        )
+                        adm_btns = [
+                            [{"text": "🗑 Kanaldan o'chirish", "callback_data": f"del_rev_{rev_id}_{ch_msg_id}"}]
                         ]
-                    ]
+                    else:
+                        admin_caption = (
+                            f"🌟 <b>YANGI MIJOZ SHARHI (Kanalga chiqmadi):</b>\n\n"
+                            f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                            f"{contact_line}\n"
+                            f"🕒 Vaqt: <code>{now_str}</code>\n\n"
+                            f"💬 <b>Fikr matni:</b>\n"
+                            f"«<i>{text}</i>»\n\n"
+                            f"⚠️ <i>Bot kanalda admin bo'lmagani uchun avtomat chiqmadi: {res_post.get('description', '')}</i>"
+                        )
+                        adm_btns = [
+                            [
+                                {"text": "📢 Kanalga chiqarish", "callback_data": f"pub_rev_{rev_id}"},
+                                {"text": "❌ Rad etish", "callback_data": f"rej_rev_{rev_id}"}
+                            ]
+                        ]
                     if client_btn:
                         adm_btns.append([client_btn])
                     self.send_message(self.admin_id, admin_caption, reply_markup={"inline_keyboard": adm_btns})
