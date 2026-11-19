@@ -23,16 +23,19 @@ except Exception:
 
 BASE_DIR = Path(__file__).resolve().parent
 
-def send_telegram_msg(bot_token, chat_id, text):
+def send_telegram_msg(bot_token, chat_id, text, reply_markup=None):
     if not bot_token or not chat_id:
         return
     try:
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        requests.post(url, json={
+        payload = {
             "chat_id": int(chat_id),
             "text": text,
             "parse_mode": "HTML"
-        }, timeout=10)
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"[TG NOTIFY ERROR] {e}")
 
@@ -196,6 +199,22 @@ def main():
         f"✅ Barcha o'quvchilar rasmiy havolalari bilan Excel faylga muhrlandi!"
     )
     send_telegram_doc(bot_token, chat_id, str(excel_path), caption=finish_caption, custom_filename=export_fname)
+
+    # 4.1. Mijozdan xizmat haqida samimiy fikr so'rash (Kanalga sharh va motivatsiya uchun)
+    try:
+        feedback_invite = (
+            f"⭐️ <b>Xizmatimiz sizga ma'qul keldimi?</b>\n\n"
+            f"Hurmatli <b>{user_name}</b>, xizmatimiz sifati va tezligi haqidagi samimiy fikringiz biz uchun juda qadrli! "
+            f"O'z fikringiz va tilaklaringizni qoldirish uchun quyidagi tugmani bosing 👇"
+        )
+        feedback_markup = {
+            "inline_keyboard": [
+                [{"text": "✍️ Fikr / Sharh qoldirish", "callback_data": f"write_review_{order_id}"}]
+            ]
+        }
+        send_telegram_msg(bot_token, chat_id, feedback_invite, reply_markup=feedback_markup)
+    except Exception as e_fb:
+        print(f"[FEEDBACK INVITE ERROR] {e_fb}")
 
     # 5. Adminga hisobot va tayyor Excel fayl nusxasi
     if admin_id and admin_id != chat_id:

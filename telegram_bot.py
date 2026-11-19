@@ -180,6 +180,24 @@ def save_users_db(db):
     except Exception as e:
         print(f"[SAVE USERS DB ERROR] {e}")
 
+REVIEWS_DB_FILE = BASE_DIR / "reviews_db.json"
+
+def load_reviews_db():
+    if REVIEWS_DB_FILE.exists():
+        try:
+            with open(REVIEWS_DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_reviews_db(db):
+    try:
+        with open(REVIEWS_DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(db, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[SAVE REVIEWS DB ERROR] {e}")
+
 def load_active_order():
     if ACTIVE_ORDER_FILE.exists():
         try:
@@ -276,6 +294,7 @@ def create_excel_template(file_path):
 
 # Global holat
 admin_input_state = {}
+client_input_state = {}
 order_progress_state = {
     "current_order": None,
     "total": 0,
@@ -448,7 +467,7 @@ class TelegramBotServer:
                     [{"text": "🌐 Web Any (Brauzerda)"}, {"text": "🧹 Keshni tozalash (Yangi buyurtma)"}],
                     [{"text": "🖥 Klaster (Kompyuterlar holati)"}, {"text": "⚡ Ishlarni bo'lish (Klasterga)"}],
                     [{"text": "⚡ Jonli Log (Console)"}, {"text": "💰 Foyda va Kassa"}],
-                    [{"text": "🛠 AI Dasturchiga yozish (Taklif)"}],
+                    [{"text": "⭐️ Mijozlar fikrlari va Natijalar"}, {"text": "🛠 AI Dasturchiga yozish (Taklif)"}],
                 ],
                 "resize_keyboard": True,
                 "is_persistent": True,
@@ -458,6 +477,7 @@ class TelegramBotServer:
                 [{"text": "🎓 To'liq Sertifikat (3 000 so'm)"}, {"text": "🔑 Faqat Login-parol (2 000 so'm)"}],
                 [{"text": "📊 Bot Statistikasi"}, {"text": "📥 Excel Shablon olish"}],
                 [{"text": "💰 Rasmiy Narxlar"}, {"text": "👨‍💼 Admin bilan aloqa"}],
+                [{"text": "⭐️ Mijozlar fikrlari va Natijalar"}]
             ],
             "resize_keyboard": True,
             "is_persistent": True,
@@ -872,6 +892,22 @@ class TelegramBotServer:
                 caption=f"✅ <b>{clean_base}</b> — Tayyor Sertifikatlar ({success_cnt}/{total_cnt} ta) | Vaqt: {dur_str}",
                 custom_filename=export_fname
             )
+
+            # Mijozdan fikr so'rash
+            try:
+                feedback_invite = (
+                    f"⭐️ <b>Xizmatimiz sizga ma'qul keldimi?</b>\n\n"
+                    f"Hurmatli <b>{user_name}</b>, xizmatimiz sifati va tezligi haqidagi samimiy fikringiz biz uchun juda qadrli! "
+                    f"O'z fikringiz va tilaklaringizni qoldirish uchun quyidagi tugmani bosing 👇"
+                )
+                feedback_markup = {
+                    "inline_keyboard": [
+                        [{"text": "✍️ Fikr / Sharh qoldirish", "callback_data": f"write_review_{int(time.time())}"}]
+                    ]
+                }
+                self.send_message(chat_id, feedback_invite, reply_markup=feedback_markup)
+            except Exception as e_fb:
+                print(f"[LOCAL FEEDBACK INVITE ERROR] {e_fb}")
 
             # Buyurtma tugagach, yangi olingan sertifikatlar va limitga tushgan sessiyalarni darhol studio-core ga saqlash:
             try:
@@ -1387,6 +1423,54 @@ class TelegramBotServer:
                     self.answer_callback_query(cb_id, "Fayl topilmadi!", show_alert=True)
                 return
 
+            if data.startswith("write_review_"):
+                self.answer_callback_query(cb_id, "✍️ Fikringizni yozing...")
+                client_input_state[chat_id] = {"action": "write_review"}
+                self.send_message(
+                    chat_id,
+                    "✍️ <b>Iltimos, xizmatimiz haqidagi fikr va taassurotingizni yozib yuboring:</b>\n\n"
+                    "<i>(Masalan: xizmat qulayligi, tezligi yoki o'z samimiy tilaklaringiz)</i>"
+                )
+                return
+
+            if data.startswith("pub_rev_"):
+                rev_id = data.replace("pub_rev_", "")
+                self.answer_callback_query(cb_id, "📢 Kanalga chiqarilmoqda...")
+                reviews = load_reviews_db()
+                rev = reviews.get(rev_id)
+                if rev:
+                    rev["status"] = "PUBLISHED"
+                    save_reviews_db(reviews)
+                    ch_target = self.config.get("reviews_channel") or "@beshmillion_fikrlar"
+                    post_text = (
+                        f"⭐️⭐️⭐️⭐️⭐️ <b>MIJOZIMIZNING MINNATDORCHILIGI!</b>\n\n"
+                        f"👤 <b>Mijoz:</b> {rev.get('user_name', 'Mijoz')}\n"
+                        f"💬 <b>Fikr:</b>\n"
+                        f"«<i>{rev.get('text', '')}</i>»\n\n"
+                        f"🕒 <b>Sana:</b> <code>{rev.get('date', '')}</code>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🤖 <b>Rasmiy Bot:</b> @Beshmillionagentbot"
+                    )
+                    res = self.send_message(ch_target, post_text)
+                    if res.get("ok"):
+                        self.edit_message(chat_id, msg_id, f"✅ <b>Ushbu sharh kanalga muvaffaqiyatli joylandi!</b>\n\n{post_text}", reply_markup={"inline_keyboard": []})
+                    else:
+                        err_desc = res.get("description", "Bot kanalda admin emas yoki kanal topilmadi")
+                        self.edit_message(chat_id, msg_id, f"⚠️ <b>Sharh saqlandi, lekin kanalga yuborilmadi:</b> {err_desc}\n\n<i>(Botni {ch_target} kanaliga admin qilsangiz, postlar to'g'ridan-to'g'ri kanalga chiqadi!)</i>\n\n{post_text}", reply_markup={"inline_keyboard": []})
+                else:
+                    self.edit_message(chat_id, msg_id, "❌ Sharh topilmadi.")
+                return
+
+            if data.startswith("rej_rev_"):
+                rev_id = data.replace("rej_rev_", "")
+                self.answer_callback_query(cb_id, "❌ Sharh rad etildi.")
+                reviews = load_reviews_db()
+                if rev_id in reviews:
+                    reviews[rev_id]["status"] = "REJECTED"
+                    save_reviews_db(reviews)
+                self.edit_message(chat_id, msg_id, "❌ <b>Sharh rad etildi va kanalga chiqarilmadi.</b>", reply_markup={"inline_keyboard": []})
+                return
+
             self.answer_callback_query(cb_id)
             return
 
@@ -1770,6 +1854,55 @@ class TelegramBotServer:
             return
 
         # ---------------------------------------------------------------------
+        # MIJOZ SHARH YOZISH HOLATI
+        # ---------------------------------------------------------------------
+        st_client = client_input_state.get(chat_id)
+        if st_client and st_client.get("action") == "write_review":
+            client_input_state.pop(chat_id, None)
+            rev_id = f"rev_{int(time.time())}_{chat_id}"
+            reviews = load_reviews_db()
+            reviews[rev_id] = {
+                "review_id": rev_id,
+                "chat_id": chat_id,
+                "user_name": user_name,
+                "text": text,
+                "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "status": "PENDING"
+            }
+            save_reviews_db(reviews)
+            self.send_message(
+                chat_id,
+                "❤️ <b>Samimiy fikringiz uchun katta rahmat!</b>\n\n"
+                "Fikringiz moderator (Admin) tasdig'idan so'ng rasmiy kanalimizga joylanadi.",
+                reply_markup=self.get_reply_keyboard(chat_id)
+            )
+
+            if self.admin_id:
+                try:
+                    mention_html, contact_line, client_btn = self.format_user_mention(chat_id, user_name, msg.get("from", {}).get("username"))
+                    admin_caption = (
+                        f"🌟 <b>YANGI MIJOZ SHARHI (Fikr keldi):</b>\n\n"
+                        f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                        f"{contact_line}\n"
+                        f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
+                        f"💬 <b>Fikr matni:</b>\n"
+                        f"«<i>{text}</i>»\n\n"
+                        f"Ushbu sharhni kanalga chiqaramizmi? 👇"
+                    )
+                    adm_btns = [
+                        [
+                            {"text": "📢 Kanalga chiqarish", "callback_data": f"pub_rev_{rev_id}"},
+                            {"text": "❌ Rad etish", "callback_data": f"rej_rev_{rev_id}"}
+                        ]
+                    ]
+                    if client_btn:
+                        adm_btns.append([client_btn])
+                    self.send_message(self.admin_id, admin_caption, reply_markup={"inline_keyboard": adm_btns})
+                except Exception as e_rev_adm:
+                    print(f"[NOTIFY ADMIN REVIEW ERROR] {e_rev_adm}")
+            return
+
+        # ---------------------------------------------------------------------
         # MATNLI BUYRUQLAR VA MENYU TUGMALARI
         # ---------------------------------------------------------------------
         if not text:
@@ -1878,6 +2011,38 @@ class TelegramBotServer:
                 f"<i>(Barcha ko'rsatkichlar real vaqtda bazadan yangilanib turadi)</i>"
             )
             self.send_message(chat_id, stats_msg, reply_markup=self.get_reply_keyboard(chat_id))
+            return
+
+        # 1.25. ⭐️ Mijozlar fikrlari va Natijalar
+        if "mijozlar fikrlari" in t_low or "fikrlar" in t_low or "sharhlar" in t_low or text == "/reviews":
+            reviews = load_reviews_db()
+            published = [v for v in reviews.values() if v.get("status") == "PUBLISHED"]
+            ch_name = self.config.get("reviews_channel", "@beshmillion_fikrlar")
+            ch_url = f"https://t.me/{ch_name.lstrip('@')}"
+
+            txt = (
+                f"⭐️ <b>MIJOZLARIMIZNING SAMIMIY FIKRLARI VA NATIJALARI!</b>\n\n"
+                f"Biz orqali yuzlab maktablar va o'qituvchilar o'z o'quvchilari uchun tezkor va kafolatli sertifikatlarga ega bo'lishdi.\n\n"
+            )
+            if published:
+                txt += "<b>So'nggi minnatdorchiliklardan namunalar:</b>\n\n"
+                for r_item in list(published)[-3:]:
+                    txt += f"👤 <b>{r_item.get('user_name', 'Mijoz')}:</b>\n«<i>{r_item.get('text', '')}</i>»\n\n"
+            else:
+                txt += (
+                    "💬 <i>Hozircha sharhlar tasdiqlanish jarayonida.\n"
+                    "Barcha jonli sharhlar va natijalar rasmiy kanalimizga joylab borilmoqda.</i>\n\n"
+                )
+
+            txt += f"📢 Barcha jonli natijalar va skrinshotlarni rasmiy kanalimizda ko'ring: <b>{ch_name}</b>"
+
+            markup = {
+                "inline_keyboard": [
+                    [{"text": f"📢 Fikrlar va Natijalar Kanali ({ch_name})", "url": ch_url}],
+                    [{"text": "✍️ O'z fikringizni qoldirish", "callback_data": "write_review_direct"}]
+                ]
+            }
+            self.send_message(chat_id, txt, reply_markup=markup)
             return
 
         # 1.5. 🔒/🔓 Server Holati (Faqat Admin boshqaradi)
