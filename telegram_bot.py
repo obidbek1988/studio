@@ -1424,13 +1424,29 @@ class TelegramBotServer:
                         reply_markup=contact_markup
                     )
                     try:
-                        self.send_message(
-                            self.admin_id,
-                            f"🔔 <b>Mijoz Excel yubordi (Server Band holatida):</b>\n"
-                            f"👤 <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
-                            f"📁 Fayl: <code>{orig_fname}</code>\n"
-                            f"ℹ️ Server 'Faqat Admin' rejimida bo'lgani sababli fayl olinmadi va Sizga yo'naltirildi."
-                        )
+                        clean_base = re.sub(r'[\\/*?:"<>|]', "", os.path.splitext(orig_fname)[0]).strip() or "Buyurtma"
+                        dest_file = ORDERS_DIR / f"order_{chat_id}_{int(time.time())}_{clean_base}.xlsx"
+                        saved_path = self.download_file(doc["file_id"], str(dest_file))
+                        if saved_path and os.path.exists(saved_path):
+                            self.send_document(
+                                self.admin_id,
+                                saved_path,
+                                caption=(
+                                    f"🔔 <b>Mijoz Excel yubordi (Server Band holatida):</b>\n\n"
+                                    f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                                    f"📁 Fayl: <code>{orig_fname}</code>\n"
+                                    f"ℹ️ Server 'Faqat Admin' rejimida bo'lgani sababli mijozga adminga yozish xabari berildi."
+                                ),
+                                custom_filename=orig_fname
+                            )
+                        else:
+                            self.send_message(
+                                self.admin_id,
+                                f"🔔 <b>Mijoz Excel yubordi (Server Band holatida):</b>\n"
+                                f"👤 <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                                f"📁 Fayl: <code>{orig_fname}</code>\n"
+                                f"ℹ️ Server 'Faqat Admin' rejimida bo'lgani sababli fayl olinmadi va Sizga yo'naltirildi."
+                            )
                     except Exception:
                         pass
                     return
@@ -1478,6 +1494,25 @@ class TelegramBotServer:
                             return
                     except Exception as ec:
                         print(f"[STUDENT COUNT CHECK ERROR] {ec}")
+
+                    # Agar mijoz yuborgan bo'lsa, faylni DARHOL Adminga jo'natamiz (adminga to'liq ko'rinishi uchun):
+                    if self.admin_id and not is_admin:
+                        try:
+                            self.send_document(
+                                self.admin_id,
+                                saved_path,
+                                caption=(
+                                    f"📥 <b>MIJOZDAN YANGI EXCEL BUYURTMA KELDI!</b>\n\n"
+                                    f"👤 Mijoz: <b>{user_name}</b>\n"
+                                    f"🆔 Chat ID: <code>{chat_id}</code>\n"
+                                    f"📁 Fayl: <code>{orig_fname}</code>\n"
+                                    f"👥 O'quvchilar soni: <b>{student_cnt} ta</b>\n"
+                                    f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>"
+                                ),
+                                custom_filename=orig_fname
+                            )
+                        except Exception as e_adm_doc:
+                            print(f"[ADMIN FORWARD EXCEL ERROR] {e_adm_doc}")
 
                     # 1. AGAR ADMIN YUBORGAN BO'LSA:
                     mode = user_selected_service.get(chat_id, "full_cert")
@@ -1660,6 +1695,17 @@ class TelegramBotServer:
             if self.admin_id:
                 data = {"chat_id": self.admin_id, "photo": file_id, "caption": caption, "parse_mode": "HTML", "reply_markup": json.dumps(markup)}
                 self.api_call("sendPhoto", data)
+                # Mijozning Excel fayli ham chek bilan birga adminga ko'rinsin:
+                if po and po.get("path") and os.path.exists(po["path"]):
+                    try:
+                        self.send_document(
+                            self.admin_id,
+                            po["path"],
+                            caption=f"📎 <b>{user_name}</b> ning buyurtma fayli: <code>{po.get('orig_fname')}</code> ({po.get('student_cnt', 0)} ta o'quvchi)",
+                            custom_filename=po.get("orig_fname")
+                        )
+                    except Exception:
+                        pass
 
             self.send_message(
                 chat_id,
