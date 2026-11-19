@@ -353,6 +353,56 @@ def sync_active_order_to_cloud(excel_path=None, state_dict=None):
 
     threading.Thread(target=_order_sync_worker, daemon=True).start()
 
+def sync_db_to_cloud():
+    """students_db.json ni studio-core reposiga ishonchli va to'liq saqlash (retry va merge bilan)"""
+    try:
+        import os, urllib.request, json, base64, time
+        token = get_cloud_sync_token()
+        if not token:
+            return False
+        
+        db = load_students_db()
+        if not db:
+            return False
+
+        api_url = "https://api.github.com/repos/obidbek1988/studio-core/contents/students_db.json"
+        
+        for attempt in range(1, 6):
+            try:
+                req = urllib.request.Request(api_url, headers={"Authorization": f"token {token}", "User-Agent": "Mozilla/5.0"})
+                sha = None
+                remote_db = {}
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read().decode())
+                        sha = data.get("sha")
+                        if data.get("content"):
+                            remote_db = json.loads(base64.b64decode(data["content"]).decode("utf-8"))
+                except Exception:
+                    pass
+
+                remote_db.update(db)
+                merged_json = json.dumps(remote_db, indent=2, ensure_ascii=False)
+                
+                put_data = {
+                    "message": "Sync complete students_db.json from worker",
+                    "content": base64.b64encode(merged_json.encode("utf-8")).decode("utf-8")
+                }
+                if sha:
+                    put_data["sha"] = sha
+                
+                put_req = urllib.request.Request(api_url, data=json.dumps(put_data).encode("utf-8"), method="PUT",
+                                                 headers={"Authorization": f"token {token}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(put_req, timeout=20):
+                    print(f"[CLOUD DB SYNC] students_db.json studio-core ga 100% muvaffaqiyatli saqlandi! ({len(remote_db)} ta o'quvchi)", flush=True)
+                    return True
+            except Exception as e_att:
+                print(f"[CLOUD DB SYNC RETRY {attempt}/5] {e_att}", flush=True)
+                time.sleep(2)
+    except Exception as e:
+        print(f"[CLOUD DB SYNC ERROR] {e}", flush=True)
+    return False
+
 def sync_db_to_cloud_async(db_dict):
     try:
         json_text = json.dumps(db_dict, indent=2, ensure_ascii=False)
