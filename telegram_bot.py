@@ -408,6 +408,27 @@ class TelegramBotServer:
                 return dest_path
         return None
 
+    def format_user_mention(self, chat_id, name="Mijoz", username=None):
+        """Mijozga to'g'ridan-to'g'ri Telegramda yozish uchun havolali matn va inline tugma qaytaradi"""
+        uname = (username or "").strip().lstrip("@")
+        if not uname:
+            try:
+                db = load_users_db()
+                uname = db.get("users", {}).get(str(chat_id), {}).get("username", "").strip().lstrip("@")
+            except Exception:
+                pass
+
+        clean_name = (name or "Mijoz").replace("<", "&lt;").replace(">", "&gt;")
+        if uname:
+            mention_html = f'<a href="https://t.me/{uname}"><b>{clean_name}</b></a> (@{uname})'
+            contact_line = f'👉 <b>Telegram:</b> @{uname} (<a href="https://t.me/{uname}">Lichkasiga yozish</a>)'
+            btn = {"text": f"💬 Mijozga yozish (@{uname})", "url": f"https://t.me/{uname}"}
+        else:
+            mention_html = f'<a href="tg://user?id={chat_id}"><b>{clean_name}</b></a>'
+            contact_line = f'👉 <b>Telegram:</b> <a href="tg://user?id={chat_id}">Mijoz profiliga o\'tish (Lichka) 💬</a>'
+            btn = None
+        return mention_html, contact_line, btn
+
     # =========================================================================
     # KLAVIATURALAR (ADMIN & FOYDALANUVCHI)
     # =========================================================================
@@ -1221,13 +1242,17 @@ class TelegramBotServer:
                     self.send_message(chat_id, invoice_msg, reply_markup=self.get_reply_keyboard(chat_id))
                     if self.admin_id:
                         try:
+                            mention_html, contact_line, client_btn = self.format_user_mention(chat_id, u_name)
+                            reply_m = {"inline_keyboard": [[client_btn]]} if client_btn else None
                             self.send_message(
                                 self.admin_id,
-                                f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n"
-                                f"👤 Mijoz: <b>{u_name}</b> (ID: <code>{chat_id}</code>)\n"
+                                f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n\n"
+                                f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                                f"{contact_line}\n"
                                 f"📁 Fayl: <code>{orig_fname}</code> ({student_cnt} ta bola)\n"
                                 f"💰 Summa: <b>{total_price:,} so'm</b>\n"
-                                f"ℹ️ To'lov cheki kutilmoqda."
+                                f"ℹ️ To'lov cheki kutilmoqda.",
+                                reply_markup=reply_m
                             )
                         except Exception: pass
                 else:
@@ -1498,17 +1523,23 @@ class TelegramBotServer:
                     # Agar mijoz yuborgan bo'lsa, faylni DARHOL Adminga jo'natamiz (adminga to'liq ko'rinishi uchun):
                     if self.admin_id and not is_admin:
                         try:
+                            from_u = msg.get("from", {})
+                            u_name_full = f"{from_u.get('first_name', '')} {from_u.get('last_name', '')}".strip() or user_name
+                            mention_html, contact_line, client_btn = self.format_user_mention(chat_id, u_name_full, from_u.get("username"))
+                            reply_m = {"inline_keyboard": [[client_btn]]} if client_btn else None
                             self.send_document(
                                 self.admin_id,
                                 saved_path,
                                 caption=(
                                     f"📥 <b>MIJOZDAN YANGI EXCEL BUYURTMA KELDI!</b>\n\n"
-                                    f"👤 Mijoz: <b>{user_name}</b>\n"
-                                    f"🆔 Chat ID: <code>{chat_id}</code>\n"
+                                    f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                                    f"{contact_line}\n"
                                     f"📁 Fayl: <code>{orig_fname}</code>\n"
                                     f"👥 O'quvchilar soni: <b>{student_cnt} ta</b>\n"
-                                    f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>"
+                                    f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
+                                    f"💡 <i>Agar Excelda xatolik bo'lsa, yuqoridagi Telegram havolasi orqali mijozga darhol yozishingiz mumkin.</i>"
                                 ),
+                                reply_markup=reply_m,
                                 custom_filename=orig_fname
                             )
                         except Exception as e_adm_doc:
@@ -1618,14 +1649,20 @@ class TelegramBotServer:
 
                     if self.admin_id:
                         try:
+                            from_u = msg.get("from", {})
+                            u_name_full = f"{from_u.get('first_name', '')} {from_u.get('last_name', '')}".strip() or user_name
+                            mention_html, contact_line, client_btn = self.format_user_mention(chat_id, u_name_full, from_u.get("username"))
+                            reply_m = {"inline_keyboard": [[client_btn]]} if client_btn else None
                             self.send_message(
                                 self.admin_id,
-                                f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n"
-                                f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                                f"📥 <b>YANGI EXCEL BUYURTMA ({srv_title}):</b>\n\n"
+                                f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                                f"{contact_line}\n"
                                 f"📁 Fayl: <code>{orig_fname}</code>\n"
                                 f"👥 O'quvchilar: <b>{student_cnt} ta</b>\n"
                                 f"💰 Kutilayotgan summa: <b>{total_price:,} so'm</b>\n"
-                                f"ℹ️ Mijozdan to'lov cheki kutilmoqda."
+                                f"ℹ️ Mijozdan to'lov cheki kutilmoqda.",
+                                reply_markup=reply_m
                             )
                         except Exception:
                             pass
@@ -1657,39 +1694,46 @@ class TelegramBotServer:
 
             # Oddiy foydalanuvchining to'lov cheki
             po = pending_orders.get(chat_id)
+            from_u = msg.get("from", {})
+            u_name_full = f"{from_u.get('first_name', '')} {from_u.get('last_name', '')}".strip() or user_name
+            mention_html, contact_line, client_btn = self.format_user_mention(chat_id, u_name_full, from_u.get("username"))
             if po:
                 caption = (
                     f"💳 <b>YANGI TO'LOV CHEKI VA BUYURTMA!</b>\n\n"
-                    f"👤 Mijoz: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                    f"👤 Mijoz: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                    f"{contact_line}\n"
                     f"📁 Fayl: <code>{po['orig_fname']}</code>\n"
                     f"👥 O'quvchilar: <b>{po['student_cnt']} ta</b>\n"
                     f"💰 Summa: <b>{po['total_price']:,} so'm</b>\n"
                     f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
                     f"To'lovni tekshirib, quyidagi tugmalar orqali tasdiqlang 👇"
                 )
-                markup = {
-                    "inline_keyboard": [
-                        [
-                            {"text": "✅ Tasdiqlash va Navbatga qo'yish", "callback_data": f"approve_order_{chat_id}"},
-                            {"text": "❌ Rad etish", "callback_data": f"reject_order_{chat_id}"}
-                        ]
+                kb_rows = [
+                    [
+                        {"text": "✅ Tasdiqlash va Navbatga qo'yish", "callback_data": f"approve_order_{chat_id}"},
+                        {"text": "❌ Rad etish", "callback_data": f"reject_order_{chat_id}"}
                     ]
-                }
+                ]
+                if client_btn:
+                    kb_rows.append([client_btn])
+                markup = {"inline_keyboard": kb_rows}
             else:
                 caption = (
                     f"💳 <b>YANGI TO'LOV CHEKI QABUL QILINDI!</b>\n\n"
-                    f"👤 Foydalanuvchi: <b>{user_name}</b> (ID: <code>{chat_id}</code>)\n"
+                    f"👤 Foydalanuvchi: {mention_html} (ID: <code>{chat_id}</code>)\n"
+                    f"{contact_line}\n"
                     f"🕒 Vaqt: <code>{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code>\n\n"
                     f"To'lovni tekshirib, quyidagi tugmalar orqali tasdiqlang 👇"
                 )
-                markup = {
-                    "inline_keyboard": [
-                        [
-                            {"text": "✅ Tasdiqlash", "callback_data": f"approve_check_{chat_id}"},
-                            {"text": "❌ Rad etish", "callback_data": f"reject_check_{chat_id}"}
-                        ]
+                kb_rows = [
+                    [
+                        {"text": "✅ Tasdiqlash", "callback_data": f"approve_check_{chat_id}"},
+                        {"text": "❌ Rad etish", "callback_data": f"reject_check_{chat_id}"}
                     ]
-                }
+                ]
+                if client_btn:
+                    kb_rows.append([client_btn])
+                markup = {"inline_keyboard": kb_rows}
 
             # Adminga yuborish
             if self.admin_id:
